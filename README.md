@@ -11,9 +11,9 @@ Turns your GitHub contribution chart into an animated Pac-Man animation. Can be 
 ## How it works
 
 1. A GitHub Action fetches your contribution calendar via the GraphQL API.
-2. Active days become dots on a 52×7 grid; inactive days are empty cells.
-3. A DFS traversal computes an ordered path through all active cells.
-4. An animated SVG is generated: Pac-Man moves along the path eating dots, with ghosts trailing behind.
+2. Active days become dots or cherries (active days * 2.5%) on a 52×7 grid; inactive days are empty cells.
+3. A DFS traversal computes a set of ordered path through all active cells and chooses one where the most Pacman walls can be generated.
+4. An animated SVG is generated: Pac-Man moves along the path eating dots/cherries, with ghosts trailing behind.
 5. The SVG is pushed to the `output` branch and served via raw.githubusercontent.com.
 
 ## Usage Guide
@@ -36,11 +36,8 @@ automatically use your username via `github.repository_owner`.
 ### 3. Add secrets to your fork
 
 Go to your fork → **Settings → Secrets and variables → Actions**:
-
-| Secret | Value |
-|--------|-------|
-| `APP_ID` | The number shown on your GitHub App page |
-| `APP_PRIVATE_KEY` | Full contents of the downloaded `.pem` file |
+- **Secret**: `APP_ID`, **Value**: The number shown on your GitHub App page |
+- **Secret**: `APP_PRIVATE_KEY`, **Value**: Full contents of the downloaded `.pem` file |
 
 ### 4. Trigger the Action
 
@@ -59,7 +56,7 @@ After the Action runs, copy this into your profile `README.md`
 
 ## Customizing sprites
 
-Replace the placeholder files in [assets/sprites/](assets/sprites/) with your own artwork:
+If you would like, you can replace our sprites with your own artwork:
 
 | File | Used for |
 |------|----------|
