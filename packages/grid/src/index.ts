@@ -1,6 +1,6 @@
 import type { ContributionGrid } from "@git-pacman/github-contributions";
 
-export type CellType = "active" | "floor" | "wall";
+export type CellType = "active" | "floor" | "wall" | "cherry";
 
 export interface Cell {
   col: number;
@@ -85,7 +85,7 @@ export function buildGrid(contributions: ContributionGrid): PacmanGrid {
   const [startC, startR] = findCenter(cells, cols, rows);
   pruneIsolatedFloors(cells, cols, rows, startC, startR);
 
-  return { cells, cols, rows, path: dfsPath(cells, cols, rows, startC, startR) };
+  return { cells, cols, rows, path: dfsPath(cells, cols, rows, startC, startR, activeCells.length) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,17 +229,25 @@ function findCenter(cells: Cell[][], cols: number, rows: number): [number, numbe
 }
 
 /** DFS through non-wall cells from (startC, startR).
- *  After pruneIsolatedFloors, the subgraph is fully connected — no teleporting. */
+ *  The subgraph should be fully connected after pruneIsolatedFloors, but if
+ *  any disconnected components remain, the first active cell of each one is
+ *  promoted to "cherry" (up to 5% of total active dots, minimum 0) so the
+ *  teleport is visually signalled rather than silently happening mid-dot. */
 function dfsPath(
   cells: Cell[][], cols: number, rows: number,
-  startC: number, startR: number
+  startC: number, startR: number,
+  totalActiveDots: number
 ): PathStep[] {
+  const maxCherries = Math.floor(totalActiveDots * 0.05);
   const visited = Array.from({ length: cols }, () => new Array<boolean>(rows).fill(false));
   const path: PathStep[] = [];
 
   function dfs(col: number, row: number, dir: Direction): void {
     visited[col][row] = true;
-    path.push({ col, row, direction: dir, eating: cells[col][row].cellType === "active" });
+    path.push({
+      col, row, direction: dir,
+      eating: cells[col][row].cellType === "active" || cells[col][row].cellType === "cherry",
+    });
     for (const { dc, dr, dir: nextDir } of CARDINAL) {
       const nc = col + dc, nr = row + dr;
       if (nc >= 0 && nc < cols && nr >= 0 && nr < rows &&
@@ -250,5 +258,28 @@ function dfsPath(
   }
 
   dfs(startC, startR, "right");
+
+  // Safety fallback for any remaining disconnected components.
+  // Mark the first active cell of each new component as a cherry (max 4 total)
+  // so the teleport arrival point gets a visual marker.
+  let cherryCount = 0;
+  let more = true;
+  while (more) {
+    more = false;
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        if (!visited[c][r] && cells[c][r].cellType !== "wall") {
+          if (cells[c][r].cellType === "active" && cherryCount < maxCherries) {
+            cells[c][r].cellType = "cherry";
+            cherryCount++;
+          }
+          dfs(c, r, path[path.length - 1].direction);
+          more = true; break;
+        }
+      }
+      if (more) break;
+    }
+  }
+
   return path;
 }

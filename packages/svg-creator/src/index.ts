@@ -32,6 +32,25 @@ function renderDot(x: number, y: number, opacityAnim: string): string {
   return `<circle cx="${x + 7}" cy="${y + 7}" r="3.5" fill="#FFD700">${opacityAnim}</circle>`;
 }
 
+function renderCherry(x: number, y: number, opacityAnim: string): string {
+  // SPRITE: pixel-art cherry — traced from assets/sprites/cherry.svg (14×14 canvas).
+  // opacityAnim is a complete <animate> element placed inside the <g> to fade
+  // the whole cherry out when Pac-Man eats it.
+  const t = (dx: number, dy: number, w: number, h: number, fill: string) =>
+    `<rect x="${x + dx}" y="${y + dy}" width="${w}" height="${h}" fill="${fill}"/>`;
+  return `<g>
+    ${opacityAnim}
+    ${t(6, 0, 2, 1, "#3a7d44")}
+    ${t(5, 1, 1, 1, "#3a7d44")}${t(8, 1, 1, 1, "#3a7d44")}
+    ${t(4, 2, 1, 1, "#3a7d44")}${t(9, 2, 1, 1, "#3a7d44")}
+    ${t(3, 3, 1, 1, "#3a7d44")}${t(10, 3, 1, 1, "#3a7d44")}
+    ${t(2, 4, 3, 1, "#cc1100")}${t(9, 4, 3, 1, "#cc1100")}
+    ${t(1, 5, 5, 3, "#cc1100")}${t(8, 5, 5, 3, "#cc1100")}
+    ${t(2, 8, 3, 1, "#cc1100")}${t(9, 8, 3, 1, "#cc1100")}
+    ${t(2, 5, 1, 1, "#ff5555")}${t(9, 5, 1, 1, "#ff5555")}
+  </g>`;
+}
+
 // ─── Character renderers ──────────────────────────────────────────────────────
 // Each character uses nested <g> elements:
 //   outer <g>: animateTransform translate → moves to grid position
@@ -172,7 +191,7 @@ export function createSvg(grid: PacmanGrid, options: SvgOptions = {}): string {
       } else if (cell.cellType === "floor") {
         floorCells.push(renderFloor(x, y));
       } else {
-        // active dot — disappears when Pac-Man arrives
+        // active dot or cherry — disappears when Pac-Man arrives
         const arrival = eatTime.get(`${c},${r}`);
         let opacityAnim = "";
         if (arrival !== undefined) {
@@ -182,7 +201,11 @@ export function createSvg(grid: PacmanGrid, options: SvgOptions = {}): string {
             keyTimes="0;${t0.toFixed(4)};${t1.toFixed(4)};1"
             dur="${totalDuration}s" repeatCount="indefinite"/>`;
         }
-        dotCells.push(renderDot(x, y, opacityAnim));
+        if (cell.cellType === "cherry") {
+          dotCells.push(renderCherry(x, y, opacityAnim));
+        } else {
+          dotCells.push(renderDot(x, y, opacityAnim));
+        }
       }
     }
   }
