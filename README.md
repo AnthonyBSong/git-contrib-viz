@@ -18,31 +18,53 @@ Turns your GitHub contribution chart into an animated Pac-Man animation. Can be 
 
 ## Usage Guide
 
-### 1. Fork this repo
+### 1. Create a workflow in your profile repo
 
-Fork `AnthonyBSong/git-pacman` to your own account. The workflow uses
-`github.repository_owner` automatically — no configuration needed.
+In your `YOUR_USERNAME/YOUR_USERNAME` profile repository, create `.github/workflows/pacman.yml`:
 
-### 2. Install the git-pacman-viz GitHub App
+```yaml
+name: Generate Pac-Man contribution animation
 
-[**Install git-pacman-viz →**](https://github.com/apps/git-pacman-viz)
+on:
+  schedule:
+    - cron: "0 0 * * *"   # runs daily at midnight UTC
+  workflow_dispatch:
 
-Select your forked `git-pacman` repository when prompted. This grants
-the workflow permission to push the generated SVG to your `output` branch.
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
-### 3. Trigger the Action
+    steps:
+      - uses: actions/checkout@v4
 
-Run **Actions → Generate Pac-Man contribution animation → Run workflow**.
+      - uses: AnthonyBSong/git-pacman@v1
+        with:
+          github_user_name: ${{ github.repository_owner }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          svg_out_path: dist/pacman.svg
 
-The Action runs automatically every day at midnight UTC after that.
+      - name: Push SVG to output branch
+        run: |
+          cd dist
+          git init -b output
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pacman.svg
+          git commit -m "chore: update pacman animation [skip ci]"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" output:output
+```
 
-### 4. Add to your profile README
-
-After the Action runs, copy this into your `YOUR_USERNAME/YOUR_USERNAME` profile `README.md`:
+### 2. Add the embed to your profile README
 
 ```md
-![Pac-Man contributions](https://raw.githubusercontent.com/YOUR_USERNAME/git-pacman/output/pacman.svg)
+![Pac-Man contributions](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_USERNAME/output/pacman.svg)
 ```
+
+### 3. Trigger it
+
+Run **Actions → Generate Pac-Man contribution animation → Run workflow** once to generate the first SVG. It will update automatically every day after that.
 
 ## Customizing sprites
 

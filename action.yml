@@ -1,0 +1,27 @@
+name: 'Git Pacman'
+description: 'Generates an animated Pac-Man eating your GitHub contribution dots and embeds it in your profile README'
+branding:
+  icon: 'zap'
+  color: 'yellow'
+
+inputs:
+  github_user_name:
+    description: 'GitHub username to generate the animation for'
+    default: ${{ github.repository_owner }}
+  github_token:
+    description: 'GitHub token for API access'
+    default: ${{ github.token }}
+  svg_out_path:
+    description: 'Path to write the generated SVG'
+    default: 'dist/pacman.svg'
+  color_scheme:
+    description: 'Background color scheme: dark or light'
+    default: 'dark'
+
+outputs:
+  svg_path:
+    description: 'Path to the generated SVG file'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

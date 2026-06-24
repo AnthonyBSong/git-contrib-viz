@@ -1,45 +1,31 @@
 name: Generate Pac-Man contribution animation
 
+# This workflow runs on AnthonyBSong's own repo to self-test the action.
+# Users who install git-pacman should copy the workflow from the README instead.
+
 on:
   schedule:
-    # Runs daily at midnight UTC
     - cron: "0 0 * * *"
-  workflow_dispatch: # Allow manual trigger from GitHub UI
+  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   generate:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # needed to push the generated SVG
+      contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Run git-pacman action
+        uses: ./
         with:
-          node-version: "24"
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build packages
-        run: |
-          npm run build --workspace packages/github-contributions
-          npm run build --workspace packages/grid
-          npm run build --workspace packages/svg-creator
-          npm run build --workspace packages/action
-
-      - name: Generate SVG
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          USERNAME: ${{ github.repository_owner }}
-          OUTPUT_PATH: dist/pacman.svg
-        run: node packages/action/dist/index.js
+          github_user_name: ${{ github.repository_owner }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          svg_out_path: dist/pacman.svg
+          color_scheme: dark
 
       - name: Push SVG to output branch
         env:

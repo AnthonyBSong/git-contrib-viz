@@ -6,10 +6,12 @@
   ],
   "scripts": {
     "build": "npm run build --workspace packages/github-contributions && npm run build --workspace packages/grid && npm run build --workspace packages/svg-creator && npm run build --workspace packages/action",
+    "bundle": "npm run build && ncc build packages/action/dist/index.js -o dist --license licenses.txt",
     "test": "npm test --workspaces --if-present"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@vercel/ncc": "^0.38.0",
     "typescript": "^5.0.0"
   }
 }

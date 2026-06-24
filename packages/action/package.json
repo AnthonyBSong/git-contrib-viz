@@ -7,6 +7,7 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@actions/core": "^1.10.0",
     "@git-pacman/github-contributions": "*",
     "@git-pacman/grid": "*",
     "@git-pacman/svg-creator": "*"
