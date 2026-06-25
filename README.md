@@ -75,7 +75,7 @@ Run **Actions → Generate Pac-Man contribution animation → Run workflow** onc
 
 ## Customizing sprites
 
-Fork this repo and update the shape elements in [packages/svg-creator/src/index.ts](packages/svg-creator/src/index.ts). All sprites render inline so the SVG stays self-contained. Reference files are in [assets/sprites/](assets/sprites/):
+To use your own personalized spirits, you can fork this repo and update the shape elements in [packages/svg-creator/src/index.ts](packages/svg-creator/src/index.ts). All sprites render inline so the SVG stays self-contained. Reference files are in [assets/sprites/](assets/sprites/):
 
 | File | Used for |
 |------|----------|
