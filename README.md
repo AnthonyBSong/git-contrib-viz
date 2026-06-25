@@ -29,7 +29,7 @@ Add this to a workflow in your `YOUR_USERNAME/YOUR_USERNAME` profile repository:
 
 ## Full workflow 
 
-###1. create `.github/workflows/pacman.yml`:
+### 1. create `.github/workflows/pacman.yml`:
 
 ```yaml
 name: Generate Pac-Man contribution animation
