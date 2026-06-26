@@ -26069,7 +26069,7 @@ function renderDot(x, y, opacityAnim) {
     return `<circle cx="${x + 7}" cy="${y + 7}" r="3.5" fill="#FFD700">${opacityAnim}</circle>`;
 }
 function renderCherry(x, y, opacityAnim) {
-    // SPRITE: pixel-art cherry — traced from assets/sprites/cherry.svg (14×14 canvas).
+    // SPRITE: pixel-art cherry — traced from assets/pacman-kit/sprites/cherry.svg (14×14 canvas).
     // opacityAnim is a complete <animate> element placed inside the <g> to fade
     // the whole cherry out when Pac-Man eats it.
     const t = (dx, dy, w, h, fill) => `<rect x="${x + dx}" y="${y + dy}" width="${w}" height="${h}" fill="${fill}"/>`;
