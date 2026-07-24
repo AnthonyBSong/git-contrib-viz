@@ -21,7 +21,7 @@ Turns your GitHub contribution chart into an animated Pac-Man animation. Can be 
 Add this to a workflow in your `YOUR_USERNAME/YOUR_USERNAME` profile repository:
 
 ```yaml
-- uses: AnthonyBSong/git-pacman@v1
+- uses: AnthonyBSong/git-pacman@main
   with:
     github_user_name: ${{ github.repository_owner }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: AnthonyBSong/git-pacman@v1
+      - uses: AnthonyBSong/git-pacman@main
         with:
           github_user_name: ${{ github.repository_owner }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
