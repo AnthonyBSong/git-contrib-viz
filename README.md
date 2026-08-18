@@ -1,10 +1,10 @@
-# git-pacman
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/AnthonyBSong/git-pacman/main.yml?label=action&style=flat-square)](https://github.com/AnthonyBSong/git-pacman/actions/)
-[![GitHub release](https://img.shields.io/github/release/AnthonyBSong/git-pacman.svg?style=flat-square)](https://github.com/AnthonyBSong/git-pacman/releases/latest)
-[![GitHub marketplace](https://img.shields.io/badge/marketplace-git--pacman--viz-blue?logo=github&style=flat-square)](https://github.com/marketplace/actions/git-pacman-viz)
+# git-contrib-viz
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/AnthonyBSong/git-contrib-viz/main.yml?label=action&style=flat-square)](https://github.com/AnthonyBSong/git-contrib-viz/actions/)
+[![GitHub release](https://img.shields.io/github/release/AnthonyBSong/git-contrib-viz.svg?style=flat-square)](https://github.com/AnthonyBSong/git-contrib-viz/releases/latest)
+[![GitHub marketplace](https://img.shields.io/badge/marketplace-git--contrib--viz-blue?logo=github&style=flat-square)](https://github.com/marketplace/actions/git-contrib-viz)
 ![type definitions](https://img.shields.io/npm/types/typescript?style=flat-square)
 
-![Pac-Man contributions](https://raw.githubusercontent.com/AnthonyBSong/git-pacman/output/pacman.svg)
+![Pac-Man contributions](https://raw.githubusercontent.com/AnthonyBSong/git-contrib-viz/output/pacman.svg)
 
 Turns your GitHub contribution chart into an animated SVG you can embed in any
 profile README. Pac-Man eating dots with ghosts in tow is the default — and it is
@@ -46,16 +46,16 @@ what they produced before.
 Add this to a workflow in your `YOUR_USERNAME/YOUR_USERNAME` profile repository:
 
 ```yaml
-- uses: AnthonyBSong/git-pacman@v1
+- uses: AnthonyBSong/git-contrib-viz@v1
   with:
     github_user_name: ${{ github.repository_owner }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### 1. Create `.github/workflows/pacman.yml`:
+### 1. Create `.github/workflows/contributions.yml`:
 
 ```yaml
-name: Generate Pac-Man contribution animation
+name: Generate contribution animation
 
 on:
   schedule:
@@ -71,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: AnthonyBSong/git-pacman@v1
+      - uses: AnthonyBSong/git-contrib-viz@v1
         with:
           github_user_name: ${{ github.repository_owner }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -98,7 +98,7 @@ jobs:
 
 ### 3. Trigger it
 
-Run **Actions → Generate Pac-Man contribution animation → Run workflow** once to generate the first SVG. It will update automatically every day after that.
+Run **Actions → Generate contribution animation → Run workflow** once to generate the first SVG. It will update automatically every day after that.
 
 ### Action inputs
 
@@ -187,7 +187,7 @@ per cell, so a detailed drawing costs its bytes once. See
 [docs/themes.md](docs/themes.md) for the details and the warnings you may see.
 
 Theme resolution order: an explicit directory path, then `./themes` and any
-`--theme-path` / `GIT_PACMAN_THEME_PATH` directory, then the built-in ids. This is
+`--theme-path` / `GIT_VIZ_THEME_PATH` directory, then the built-in ids. This is
 the seam a theme marketplace plugs into — installing a theme will mean dropping its
 directory on that search path, with no change to the renderer, the CLI or the Action.
 
@@ -196,7 +196,7 @@ to your own profile repository works in the Action with no extra wiring:
 
 ```yaml
       - uses: actions/checkout@v4          # your repo, containing themes/my-theme/
-      - uses: AnthonyBSong/git-pacman@v1
+      - uses: AnthonyBSong/git-contrib-viz@v1
         with:
           theme: my-theme
 ```

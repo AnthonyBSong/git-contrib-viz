@@ -1,5 +1,5 @@
 {
-  "name": "@git-pacman/generator",
+  "name": "@git-contrib-viz/generator",
   "version": "1.0.0",
   "description": "Wires contributions, grid and theme into a finished SVG — shared by the CLI and the Action",
   "main": "dist/index.js",
@@ -8,10 +8,10 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@git-pacman/github-contributions": "*",
-    "@git-pacman/grid": "*",
-    "@git-pacman/svg-creator": "*",
-    "@git-pacman/theme": "*"
+    "@git-contrib-viz/github-contributions": "*",
+    "@git-contrib-viz/grid": "*",
+    "@git-contrib-viz/svg-creator": "*",
+    "@git-contrib-viz/theme": "*"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

@@ -1,4 +1,4 @@
-name: 'Git-Pacman-Viz'
+name: 'Git-Contrib-Viz'
 description: 'Generates an animated contribution chart — Pac-Man, dogs, or your own sprites — and embeds it in your profile README'
 branding:
   icon: 'circle'

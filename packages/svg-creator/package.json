@@ -1,5 +1,5 @@
 {
-  "name": "@git-pacman/svg-creator",
+  "name": "@git-contrib-viz/svg-creator",
   "version": "1.0.0",
   "description": "Generates the animated SVG: positions a theme's sprites and animates them along the grid path",
   "main": "dist/index.js",
@@ -8,8 +8,8 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@git-pacman/grid": "*",
-    "@git-pacman/theme": "*"
+    "@git-contrib-viz/grid": "*",
+    "@git-contrib-viz/theme": "*"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

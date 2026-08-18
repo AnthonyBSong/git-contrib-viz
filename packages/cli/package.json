@@ -1,5 +1,5 @@
 {
-  "name": "@git-pacman/cli",
+  "name": "@git-contrib-viz/cli",
   "version": "1.0.0",
   "description": "Command-line front-end: pick a theme and a formation, write the SVG",
   "main": "dist/cli.js",
@@ -10,9 +10,9 @@
     "build": "tsc && chmod +x dist/cli.js"
   },
   "dependencies": {
-    "@git-pacman/generator": "*",
-    "@git-pacman/github-contributions": "*",
-    "@git-pacman/theme": "*"
+    "@git-contrib-viz/generator": "*",
+    "@git-contrib-viz/github-contributions": "*",
+    "@git-contrib-viz/theme": "*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

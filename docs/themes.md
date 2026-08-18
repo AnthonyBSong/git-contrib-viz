@@ -21,7 +21,7 @@ npx git-viz --theme ./my-theme --contributions calendar.json --out preview.svg
 ```
 
 Drop the directory in `./themes` (or any directory passed to `--theme-path`, or
-listed in `GIT_PACMAN_THEME_PATH`) and you can refer to it by id instead:
+listed in `GIT_VIZ_THEME_PATH`) and you can refer to it by id instead:
 
 ```bash
 npx git-viz --theme my-theme --formation train

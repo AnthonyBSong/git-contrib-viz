@@ -3,7 +3,7 @@
   "id": "example-shapes",
   "name": "Example Shapes",
   "description": "A reference theme built from inline markup only — copy this to start your own.",
-  "author": "git-pacman",
+  "author": "git-contrib-viz",
 
   "background": { "dark": "#0d1117", "light": "#ffffff" },
 

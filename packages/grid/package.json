@@ -1,5 +1,5 @@
 {
-  "name": "@git-pacman/grid",
+  "name": "@git-contrib-viz/grid",
   "version": "1.0.0",
   "description": "Builds the collectible grid and computes a traversal path through active cells",
   "main": "dist/index.js",
@@ -8,8 +8,8 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@git-pacman/github-contributions": "*",
-    "@git-pacman/theme": "*"
+    "@git-contrib-viz/github-contributions": "*",
+    "@git-contrib-viz/theme": "*"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

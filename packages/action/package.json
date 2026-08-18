@@ -1,15 +1,15 @@
 {
-  "name": "@git-pacman/action",
+  "name": "@git-contrib-viz/action",
   "version": "1.0.0",
-  "description": "GitHub Action entry point — fetches contributions and writes pacman.svg",
+  "description": "GitHub Action entry point — fetches contributions and writes the animated SVG",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc"
   },
   "dependencies": {
     "@actions/core": "^1.10.0",
-    "@git-pacman/generator": "*",
-    "@git-pacman/theme": "*"
+    "@git-contrib-viz/generator": "*",
+    "@git-contrib-viz/theme": "*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -107,7 +107,7 @@ export function discoverThemes(options: LoadThemeOptions = {}): ThemeSummary[] {
 export interface LoadThemeOptions {
   /**
    * Directories searched for installed themes, each expected to contain
-   * `<id>/theme.json`. Defaults to `./themes` plus `GIT_PACMAN_THEME_PATH`.
+   * `<id>/theme.json`. Defaults to `./themes` plus `GIT_VIZ_THEME_PATH`.
    */
   searchPaths?: string[];
   /** Collects artwork problems worth telling the user about. */
@@ -155,7 +155,7 @@ export function loadTheme(spec: string, options: LoadThemeOptions = {}): Theme {
 
 function searchPaths(explicit: string[] | undefined, cwd: string): string[] {
   if (explicit) return explicit;
-  const fromEnv = (process.env.GIT_PACMAN_THEME_PATH ?? "")
+  const fromEnv = (process.env.GIT_VIZ_THEME_PATH ?? "")
     .split(path.delimiter)
     .filter((p) => p.trim() !== "");
   return [path.resolve(cwd, "themes"), ...fromEnv];
@@ -258,10 +258,10 @@ export function createDirectoryLoader(dir: string, report?: SanitizeReport): Spr
  *
  * The compiled action is bundled to `dist/index.js` at the repo root, while the
  * package runs from `packages/theme/dist/`, so the depth differs — walking up for
- * the marker handles both. `GIT_PACMAN_ASSETS_DIR` overrides it outright.
+ * the marker handles both. `GIT_VIZ_ASSETS_DIR` overrides it outright.
  */
 export function findAssetsRoot(): string {
-  const override = process.env.GIT_PACMAN_ASSETS_DIR;
+  const override = process.env.GIT_VIZ_ASSETS_DIR;
   if (override) return path.resolve(override);
 
   const marker = path.join("pacman-kit", "sprites");
@@ -279,7 +279,7 @@ export function findAssetsRoot(): string {
   }
 
   throw new Error(
-    "could not locate the bundled assets/ directory; set GIT_PACMAN_ASSETS_DIR to its path"
+    "could not locate the bundled assets/ directory; set GIT_VIZ_ASSETS_DIR to its path"
   );
 }
 

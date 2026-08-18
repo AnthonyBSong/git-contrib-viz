@@ -1,5 +1,5 @@
 {
-  "name": "@git-pacman/github-contributions",
+  "name": "@git-contrib-viz/github-contributions",
   "version": "1.0.0",
   "description": "Fetches GitHub contribution calendar data via GraphQL API",
   "main": "dist/index.js",

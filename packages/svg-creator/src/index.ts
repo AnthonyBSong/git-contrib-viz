@@ -11,7 +11,7 @@
  * `keyTimes` list and one duration, which is what keeps a train in lockstep.
  */
 
-import type { PathStep, TraversalGrid } from "@git-pacman/grid";
+import type { PathStep, TraversalGrid } from "@git-contrib-viz/grid";
 import {
   chooseFormation,
   placeSprite,
@@ -23,7 +23,7 @@ import {
   type ResolvedFigure,
   type ResolvedSprite,
   type Theme,
-} from "@git-pacman/theme";
+} from "@git-contrib-viz/theme";
 
 /** Rotation applied to a figure that faces its heading. Sprites face right at 0°. */
 const DIR_ANGLE: Record<Direction, number> = {

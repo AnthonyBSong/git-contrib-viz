@@ -1,5 +1,5 @@
-import type { ContributionGrid } from "@git-pacman/github-contributions";
-import type { Direction } from "@git-pacman/theme";
+import type { ContributionGrid } from "@git-contrib-viz/github-contributions";
+import type { Direction } from "@git-contrib-viz/theme";
 
 export type { Direction };
 

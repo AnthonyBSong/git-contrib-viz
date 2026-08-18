@@ -81,17 +81,17 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 
-@git-pacman/action
+@git-contrib-viz/action
 
-@git-pacman/generator
+@git-contrib-viz/generator
 
-@git-pacman/github-contributions
+@git-contrib-viz/github-contributions
 
-@git-pacman/grid
+@git-contrib-viz/grid
 
-@git-pacman/svg-creator
+@git-contrib-viz/svg-creator
 
-@git-pacman/theme
+@git-contrib-viz/theme
 
 tunnel
 MIT

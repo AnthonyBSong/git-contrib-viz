@@ -7,9 +7,9 @@
  * cannot drift between them.
  */
 
-import { fetchContributions, type ContributionGrid } from "@git-pacman/github-contributions";
-import { buildGrid, type TraversalGrid } from "@git-pacman/grid";
-import { createSvg } from "@git-pacman/svg-creator";
+import { fetchContributions, type ContributionGrid } from "@git-contrib-viz/github-contributions";
+import { buildGrid, type TraversalGrid } from "@git-contrib-viz/grid";
+import { createSvg } from "@git-contrib-viz/svg-creator";
 import {
   chooseFormation,
   loadTheme,
@@ -17,7 +17,7 @@ import {
   type Formation,
   type SanitizeReport,
   type Theme,
-} from "@git-pacman/theme";
+} from "@git-contrib-viz/theme";
 
 export const DEFAULT_THEME = "pacman";
 

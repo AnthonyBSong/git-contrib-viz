@@ -26915,7 +26915,7 @@ function loadTheme(spec, options = {}) {
 function searchPaths(explicit, cwd) {
     if (explicit)
         return explicit;
-    const fromEnv = (process.env.GIT_PACMAN_THEME_PATH ?? "")
+    const fromEnv = (process.env.GIT_VIZ_THEME_PATH ?? "")
         .split(path_1.default.delimiter)
         .filter((p) => p.trim() !== "");
     return [path_1.default.resolve(cwd, "themes"), ...fromEnv];
@@ -27007,10 +27007,10 @@ function createDirectoryLoader(dir, report) {
  *
  * The compiled action is bundled to `dist/index.js` at the repo root, while the
  * package runs from `packages/theme/dist/`, so the depth differs — walking up for
- * the marker handles both. `GIT_PACMAN_ASSETS_DIR` overrides it outright.
+ * the marker handles both. `GIT_VIZ_ASSETS_DIR` overrides it outright.
  */
 function findAssetsRoot() {
-    const override = process.env.GIT_PACMAN_ASSETS_DIR;
+    const override = process.env.GIT_VIZ_ASSETS_DIR;
     if (override)
         return path_1.default.resolve(override);
     const marker = path_1.default.join("pacman-kit", "sprites");
@@ -27027,7 +27027,7 @@ function findAssetsRoot() {
             dir = parent;
         }
     }
-    throw new Error("could not locate the bundled assets/ directory; set GIT_PACMAN_ASSETS_DIR to its path");
+    throw new Error("could not locate the bundled assets/ directory; set GIT_VIZ_ASSETS_DIR to its path");
 }
 function formatBytes(bytes) {
     return bytes >= 1024 * 1024

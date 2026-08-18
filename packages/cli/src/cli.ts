@@ -10,9 +10,9 @@
 
 import fs from "fs";
 import path from "path";
-import type { ContributionGrid } from "@git-pacman/github-contributions";
-import { generate, summarizeGrid, DEFAULT_THEME } from "@git-pacman/generator";
-import { discoverThemes } from "@git-pacman/theme";
+import type { ContributionGrid } from "@git-contrib-viz/github-contributions";
+import { generate, summarizeGrid, DEFAULT_THEME } from "@git-contrib-viz/generator";
+import { discoverThemes } from "@git-contrib-viz/theme";
 import { enumFlag, formatFlags, listFlag, parseArgs, stringFlag, UsageError, type FlagSpec } from "./args";
 
 const FLAGS: FlagSpec[] = [
@@ -108,7 +108,7 @@ function printThemes(themePaths?: string[]): void {
   for (const warning of report.warnings) process.stderr.write(`warning: ${warning}\n`);
   process.stdout.write(
     "\nUse a theme with --theme <id>, or --theme <directory containing theme.json>.\n" +
-      "Installed themes are found in ./themes, any --theme-path directory, or GIT_PACMAN_THEME_PATH.\n"
+      "Installed themes are found in ./themes, any --theme-path directory, or GIT_VIZ_THEME_PATH.\n"
   );
 }
 

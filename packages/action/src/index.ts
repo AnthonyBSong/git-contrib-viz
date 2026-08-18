@@ -1,8 +1,8 @@
 import * as core from "@actions/core";
 import fs from "fs";
 import path from "path";
-import { generate, summarizeGrid, DEFAULT_THEME } from "@git-pacman/generator";
-import type { ColorScheme, Formation } from "@git-pacman/theme";
+import { generate, summarizeGrid, DEFAULT_THEME } from "@git-contrib-viz/generator";
+import type { ColorScheme, Formation } from "@git-contrib-viz/theme";
 
 /**
  * GitHub Action front-end. Reads inputs, hands them to the shared pipeline and
