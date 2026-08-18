@@ -1,0 +1,21 @@
+{
+  "name": "@git-pacman/cli",
+  "version": "1.0.0",
+  "description": "Command-line front-end: pick a theme and a formation, write the SVG",
+  "main": "dist/cli.js",
+  "bin": {
+    "git-viz": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js"
+  },
+  "dependencies": {
+    "@git-pacman/generator": "*",
+    "@git-pacman/github-contributions": "*",
+    "@git-pacman/theme": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

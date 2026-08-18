@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "example-shapes",
+  "name": "Example Shapes",
+  "description": "A reference theme built from inline markup only — copy this to start your own.",
+  "author": "git-pacman",
+
+  "background": { "dark": "#0d1117", "light": "#ffffff" },
+
+  "sprites": {
+    "block": {
+      "inline": "<rect x=\"1\" y=\"1\" width=\"12\" height=\"12\" rx=\"2\" fill=\"#241a3d\" stroke=\"#8b5cf6\" stroke-width=\"1.5\"/>"
+    },
+    "path": {
+      "inline": "<rect x=\"2\" y=\"2\" width=\"10\" height=\"10\" rx=\"2\" fill=\"#161b22\"/>"
+    },
+    "pip": {
+      "inline": "<rect x=\"5\" y=\"5\" width=\"4\" height=\"4\" rx=\"1\" fill=\"#a78bfa\">{{children}}</rect>"
+    },
+    "star": {
+      "inline": "<polygon points=\"7,0 8.8,4.8 14,5.2 10,8.6 11.2,14 7,11 2.8,14 4,8.6 0,5.2 5.2,4.8\" fill=\"#fbbf24\">{{children}}</polygon>"
+    },
+
+    "arrow": {
+      "inline": "<polygon points=\"1,1 13,7 1,13 4,7\" fill=\"#22d3ee\"/>"
+    },
+    "follower": {
+      "inline": "<circle cx=\"7\" cy=\"7\" r=\"5\" fill=\"{{tint}}\" opacity=\"0.9\"><animate attributeName=\"r\" values=\"5;4;5\" dur=\"0.6s\" repeatCount=\"indefinite\"/></circle>"
+    }
+  },
+
+  "terrain": { "wall": "block", "floor": "path" },
+
+  "collectibles": {
+    "pellet": "pip",
+    "bonus": { "sprite": "star", "rate": 0.02 }
+  },
+
+  "figures": {
+    "leader": { "id": "arrow", "sprite": "arrow", "rotate": true },
+    "followers": [
+      { "id": "trail-1", "sprite": "follower", "vars": { "tint": "#22d3ee" } },
+      { "id": "trail-2", "sprite": "follower", "vars": { "tint": "#0ea5e9" } },
+      { "id": "trail-3", "sprite": "follower", "vars": { "tint": "#6366f1" } }
+    ],
+    "followerSpacing": 3
+  },
+
+  "defaultFormation": "train"
+}

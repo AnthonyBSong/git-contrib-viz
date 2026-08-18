@@ -25688,36 +25688,118 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(7484));
 const fs_1 = __importDefault(__nccwpck_require__(9896));
 const path_1 = __importDefault(__nccwpck_require__(6928));
-const github_contributions_1 = __nccwpck_require__(2621);
-const grid_1 = __nccwpck_require__(2586);
-const svg_creator_1 = __nccwpck_require__(7381);
+const generator_1 = __nccwpck_require__(3707);
+/**
+ * GitHub Action front-end. Reads inputs, hands them to the shared pipeline and
+ * writes the result. Inputs fall back to environment variables so the same code
+ * path runs locally, and `theme`/`formation` default to the original Pac-Man train
+ * so existing workflows keep producing exactly what they produced before.
+ */
 async function main() {
-    // Read from GitHub Actions inputs; fall back to env vars for local dev
     const token = core.getInput("github_token") || process.env.GH_TOKEN || "";
     const username = core.getInput("github_user_name") || process.env.USERNAME || "";
     const outputPath = core.getInput("svg_out_path") || process.env.OUTPUT_PATH || "dist/pacman.svg";
     const colorScheme = (core.getInput("color_scheme") || process.env.COLOR_SCHEME || "dark");
+    const themeName = core.getInput("theme") || process.env.THEME || generator_1.DEFAULT_THEME;
+    const formationInput = core.getInput("formation") || process.env.FORMATION || "";
     if (!token)
         throw new Error("github_token input (or GH_TOKEN env var) is required");
     if (!username)
         throw new Error("github_user_name input (or USERNAME env var) is required");
+    if (formationInput && formationInput !== "single" && formationInput !== "train") {
+        throw new Error(`formation input must be "single" or "train" (got "${formationInput}")`);
+    }
+    if (colorScheme !== "dark" && colorScheme !== "light") {
+        throw new Error(`color_scheme input must be "dark" or "light" (got "${colorScheme}")`);
+    }
     core.info(`Fetching contributions for ${username}…`);
-    const contributions = await (0, github_contributions_1.fetchContributions)(username, token);
-    core.info(`  Total contributions: ${contributions.totalContributions}`);
-    core.info("Building grid and computing Pac-Man path…");
-    const grid = (0, grid_1.buildGrid)(contributions);
-    core.info(`  Grid: ${grid.cols} cols × ${grid.rows} rows, ${grid.path.length} path steps`);
-    core.info("Generating SVG…");
-    const svg = (0, svg_creator_1.createSvg)(grid, { includeGhosts: true, colorScheme });
+    const result = await (0, generator_1.generate)({
+        username,
+        token,
+        theme: themeName,
+        formation: (formationInput || null),
+        colorScheme,
+    });
+    core.info(`  Total contributions: ${result.contributions.totalContributions}`);
+    core.info(`Theme: ${result.theme.name} (${result.theme.id}), formation: ${result.formation}`);
+    const counts = (0, generator_1.summarizeGrid)(result.grid);
+    core.info(`  Grid: ${result.grid.cols} cols × ${result.grid.rows} rows, ` +
+        `${result.grid.path.length} path steps, ${counts.pellet ?? 0} pellets, ${counts.bonus ?? 0} bonus`);
+    for (const warning of result.warnings)
+        core.warning(warning);
     const dir = path_1.default.dirname(outputPath);
     fs_1.default.mkdirSync(dir, { recursive: true });
-    fs_1.default.writeFileSync(outputPath, svg, "utf8");
+    fs_1.default.writeFileSync(outputPath, result.svg, "utf8");
     core.info(`SVG written to ${outputPath}`);
     core.setOutput("svg_path", outputPath);
+    core.setOutput("theme", result.theme.id);
+    core.setOutput("formation", result.formation);
 }
 main().catch((err) => {
     core.setFailed(err instanceof Error ? err.message : String(err));
 });
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ 3707:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+/**
+ * The pipeline: contributions → grid → themed SVG.
+ *
+ * Both front-ends (the CLI and the GitHub Action) call `generate`, so the wiring
+ * that matters — above all, that the grid's bonus rate comes from the theme, so a
+ * theme with no bonus item never gets bonus cells — is decided in one place and
+ * cannot drift between them.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DEFAULT_THEME = void 0;
+exports.generate = generate;
+exports.summarizeGrid = summarizeGrid;
+const github_contributions_1 = __nccwpck_require__(2621);
+const grid_1 = __nccwpck_require__(2586);
+const svg_creator_1 = __nccwpck_require__(7381);
+const theme_1 = __nccwpck_require__(8235);
+exports.DEFAULT_THEME = "pacman";
+async function generate(options) {
+    const report = { warnings: [] };
+    const theme = (0, theme_1.loadTheme)(options.theme ?? exports.DEFAULT_THEME, {
+        searchPaths: options.themePaths,
+        cwd: options.cwd,
+        report,
+    });
+    const formation = (0, theme_1.chooseFormation)(theme, options.formation ?? undefined);
+    const contributions = options.contributions ?? (await fetchCalendar(options));
+    // The theme decides whether a rare collectible exists at all: no bonus in the
+    // manifest means no bonus cells in the grid, which is how the dogs end up
+    // eating biscuits and nothing else.
+    const grid = (0, grid_1.buildGrid)(contributions, { bonusRate: theme.collectibles.bonus?.rate ?? 0 });
+    const svg = (0, svg_creator_1.createSvg)(grid, theme, { formation, colorScheme: options.colorScheme });
+    return { svg, theme, grid, formation, contributions, warnings: dedupe(report.warnings) };
+}
+async function fetchCalendar(options) {
+    if (!options.token)
+        throw new Error("a GitHub token is required to fetch contributions");
+    if (!options.username)
+        throw new Error("a GitHub username is required to fetch contributions");
+    return (0, github_contributions_1.fetchContributions)(options.username, options.token);
+}
+/** One warning per distinct problem, however many sprites tripped over it. */
+function dedupe(warnings) {
+    return [...new Set(warnings)];
+}
+/** Counts each kind of cell — used for the run summary the front-ends print. */
+function summarizeGrid(grid) {
+    const counts = {};
+    for (const column of grid.cells) {
+        for (const cell of column)
+            counts[cell.cellType] = (counts[cell.cellType] ?? 0) + 1;
+    }
+    return counts;
+}
 //# sourceMappingURL=index.js.map
 
 /***/ }),
@@ -25796,20 +25878,20 @@ const CARDINAL = [
     { dc: 0, dr: -1, dir: "up" },
 ];
 const MAX_WALL_CLUSTER = 8;
-function buildGrid(contributions) {
+function buildGrid(contributions, options = {}) {
     const rows = 7;
     const cols = contributions.weeks.length;
     const cells = Array.from({ length: cols }, (_, col) => Array.from({ length: rows }, (_, row) => {
         const count = contributions.weeks[col]?.contributionDays[row]?.contributionCount ?? 0;
         return {
             col, row, contributionCount: count,
-            cellType: (count > 0 ? "active" : "wall"),
+            cellType: (count > 0 ? "pellet" : "wall"),
         };
     }));
     const activeCells = [];
     for (let c = 0; c < cols; c++)
         for (let r = 0; r < rows; r++)
-            if (cells[c][r].cellType === "active")
+            if (cells[c][r].cellType === "pellet")
                 activeCells.push([c, r]);
     if (activeCells.length === 0)
         return { cells, cols, rows, path: [] };
@@ -25837,9 +25919,10 @@ function buildGrid(contributions) {
     // ── Step 3: enforce connectivity ──
     const [startC, startR] = findCenter(cells, cols, rows);
     pruneIsolatedFloors(cells, cols, rows, startC, startR);
-    // ── Step 4: sprinkle cherries — 5% of active dots, evenly spaced across
-    // the grid in scan order, independent of teleporting. ──
-    sprinkleCherries(cells, cols, rows);
+    // ── Step 4: sprinkle bonus collectibles — a fraction of the active cells,
+    // evenly spaced across the grid in scan order. Themes without a bonus item
+    // pass no rate and this is a no-op. ──
+    sprinkleBonus(cells, cols, rows, options.bonusRate ?? 0);
     return { cells, cols, rows, path: dfsPath(cells, cols, rows, startC, startR) };
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25865,12 +25948,12 @@ function bfsCorridors(cells, cols, rows, startC, startR) {
     const corridors = new Set();
     for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
-            if (cells[c][r].cellType !== "active")
+            if (cells[c][r].cellType !== "pellet")
                 continue;
             let cc = c, rr = r;
             while (parent[cc][rr] !== null) {
                 const [pc, pr] = parent[cc][rr];
-                if (cells[pc][pr].cellType !== "active")
+                if (cells[pc][pr].cellType !== "pellet")
                     corridors.add(`${pc},${pr}`);
                 cc = pc;
                 rr = pr;
@@ -25955,7 +26038,7 @@ function pruneIsolatedFloors(cells, cols, rows, startC, startR) {
             if (!reachable[c][r] && cells[c][r].cellType === "floor")
                 cells[c][r].cellType = "wall";
 }
-/** Non-wall cell closest to the grid's center — natural Pac-Man start. */
+/** Non-wall cell closest to the grid's center — where the leader starts. */
 function findCenter(cells, cols, rows) {
     const cc = cols / 2, cr = rows / 2;
     let bestC = 0, bestR = 0, bestDist = Infinity;
@@ -25973,24 +26056,26 @@ function findCenter(cells, cols, rows) {
     return [bestC, bestR];
 }
 /**
- * Evenly sprinkles cherries across active cells — exactly floor(5% of active
- * dot count), spaced uniformly through the left-to-right scan order so they
- * appear distributed across the whole chart rather than clustered.
+ * Promotes floor(rate × active cells) pellets to the bonus collectible, spaced
+ * uniformly through the left-to-right scan order so they appear distributed
+ * across the whole chart rather than clustered.
  */
-function sprinkleCherries(cells, cols, rows) {
+function sprinkleBonus(cells, cols, rows, rate) {
+    if (!(rate > 0))
+        return;
     const active = [];
     for (let c = 0; c < cols; c++)
         for (let r = 0; r < rows; r++)
-            if (cells[c][r].cellType === "active")
+            if (cells[c][r].cellType === "pellet")
                 active.push([c, r]);
-    const count = Math.floor(active.length * 0.025);
+    const count = Math.floor(active.length * rate);
     if (count === 0)
         return;
     // Pick `count` evenly-spaced indices through the active list
     for (let i = 0; i < count; i++) {
         const idx = Math.round(((i + 0.5) / count) * active.length);
         const [c, r] = active[Math.min(idx, active.length - 1)];
-        cells[c][r].cellType = "cherry";
+        cells[c][r].cellType = "bonus";
     }
 }
 /** DFS through non-wall cells from (startC, startR). */
@@ -26001,7 +26086,7 @@ function dfsPath(cells, cols, rows, startC, startR) {
         visited[col][row] = true;
         path.push({
             col, row, direction: dir,
-            eating: cells[col][row].cellType === "active" || cells[col][row].cellType === "cherry",
+            eating: cells[col][row].cellType === "pellet" || cells[col][row].cellType === "bonus",
         });
         for (const { dc, dr, dir: nextDir } of CARDINAL) {
             const nc = col + dc, nr = row + dr;
@@ -26036,244 +26121,1374 @@ function dfsPath(cells, cols, rows, startC, startR) {
 /***/ }),
 
 /***/ 7381:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
+/**
+ * Turns a traversal grid plus a theme into one animated SVG.
+ *
+ * This module owns the timing and the geometry; the theme owns every mark on the
+ * page. Nothing here knows what a ghost or a biscuit is — it asks the theme for a
+ * sprite, positions it, and animates it along the path. That split is what lets a
+ * new skin be a manifest rather than a code change.
+ *
+ * Animation is SMIL with `calcMode="discrete"`, one keyframe per path step, so a
+ * figure snaps cell to cell the way an arcade sprite does. Every figure shares one
+ * `keyTimes` list and one duration, which is what keeps a train in lockstep.
+ */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.createSvg = createSvg;
-// ─── Layout ──────────────────────────────────────────────────────────────────
-const CELL_SIZE = 14;
-const CELL_GAP = 2;
-const PADDING = 20;
-const STEP_DURATION = 0.08; // seconds per path step
-// ─── Direction → rotation angle (Pac-Man faces right at 0°) ─────────────────
+const theme_1 = __nccwpck_require__(8235);
+/** Rotation applied to a figure that faces its heading. Sprites face right at 0°. */
 const DIR_ANGLE = {
     right: 0,
     down: 90,
     left: 180,
     up: 270,
 };
-// ─── Cell renderers ───────────────────────────────────────────────────────────
-// SPRITE: replace rect/circle shapes with custom artwork. Canvas is 14×14px.
-function renderWall(x, y) {
-    // Blue-outlined rect — classic Pac-Man maze wall look
-    return `<rect x="${x + 1}" y="${y + 1}" width="12" height="12" rx="1.5"
-    fill="#0f1b3d" stroke="#3b82f6" stroke-width="1.5"/>`;
-}
-function renderFloor(x, y) {
-    return `<rect x="${x + 2}" y="${y + 2}" width="10" height="10" rx="2" fill="#161b22"/>`;
-}
-function renderDot(x, y, opacityAnim) {
-    // SPRITE: yellow pellet dot — replace circle with custom artwork
-    return `<circle cx="${x + 7}" cy="${y + 7}" r="3.5" fill="#FFD700">${opacityAnim}</circle>`;
-}
-function renderCherry(x, y, opacityAnim) {
-    // SPRITE: pixel-art cherry — traced from assets/sprites/cherry.svg (14×14 canvas).
-    // opacityAnim is a complete <animate> element placed inside the <g> to fade
-    // the whole cherry out when Pac-Man eats it.
-    const t = (dx, dy, w, h, fill) => `<rect x="${x + dx}" y="${y + dy}" width="${w}" height="${h}" fill="${fill}"/>`;
-    return `<g>
-    ${opacityAnim}
-    ${t(6, 0, 2, 1, "#3a7d44")}
-    ${t(5, 1, 1, 1, "#3a7d44")}${t(8, 1, 1, 1, "#3a7d44")}
-    ${t(4, 2, 1, 1, "#3a7d44")}${t(9, 2, 1, 1, "#3a7d44")}
-    ${t(3, 3, 1, 1, "#3a7d44")}${t(10, 3, 1, 1, "#3a7d44")}
-    ${t(2, 4, 3, 1, "#cc1100")}${t(9, 4, 3, 1, "#cc1100")}
-    ${t(1, 5, 5, 3, "#cc1100")}${t(8, 5, 5, 3, "#cc1100")}
-    ${t(2, 8, 3, 1, "#cc1100")}${t(9, 8, 3, 1, "#cc1100")}
-    ${t(2, 5, 1, 1, "#ff5555")}${t(9, 5, 1, 1, "#ff5555")}
-  </g>`;
-}
-// ─── Character renderers ──────────────────────────────────────────────────────
-// Each character uses nested <g> elements:
-//   outer <g>: animateTransform translate → moves to grid position
-//   inner <g>: animateTransform rotate   → faces movement direction
-//
-// SPRITE: replace shape elements inside inner <g> with custom artwork (14×14 canvas,
-// character should face RIGHT at 0°, centered at (7,7)).
-function renderPacman(translateValues, rotateValues, keyTimes, dur) {
-    return `
-  <g>
-    <animateTransform attributeName="transform" type="translate"
-      values="${translateValues}" keyTimes="${keyTimes}"
-      dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-    <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="${rotateValues}" keyTimes="${keyTimes}"
-        dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-      <!-- SPRITE: Pac-Man body — facing right, centered at (7,7) -->
-      <path fill="#FFD700">
-        <animate attributeName="d"
-          values="M7,7 L13,4 A6,6 0,1,0 13,10 Z;M7,7 L13,6.8 A6,6 0,1,0 13,7.2 Z;M7,7 L13,4 A6,6 0,1,0 13,10 Z"
-          dur="0.3s" repeatCount="indefinite"/>
-      </path>
-    </g>
-  </g>`;
-}
-// Pupil x-positions per direction.
-// Left eye white: x=2..4. Right eye white: x=8..10.
-// Pupil is 1×2; right-facing → right side of eye; left-facing → left side.
-const PUPIL_X = {
-    right: { left: 4, right: 10 },
-    left: { left: 2, right: 8 },
-    up: { left: 4, right: 10 }, // treat up/down as right-facing
-    down: { left: 2, right: 8 }, // treat down as left-facing
-};
-function renderGhost(color, translateValues, leftPupilX, // per-frame x for left-eye pupil
-rightPupilX, // per-frame x for right-eye pupil
-keyTimes, dur) {
-    // SPRITE: pixel-art ghost traced from ghost_right.jpeg (14×14 canvas).
-    // Replace rect/circle shapes with custom artwork to reskin.
-    return `
-  <g>
-    <animateTransform attributeName="transform" type="translate"
-      values="${translateValues}" keyTimes="${keyTimes}"
-      dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-    <!-- Top dome -->
-    <rect x="4"  y="0" width="6"  height="1" fill="${color}"/>
-    <rect x="3"  y="1" width="8"  height="1" fill="${color}"/>
-    <rect x="2"  y="2" width="10" height="1" fill="${color}"/>
-    <rect x="1"  y="3" width="12" height="1" fill="${color}"/>
-    <!-- Eye-row body (left edge, centre, right edge) -->
-    <rect x="1"  y="4" width="1"  height="4" fill="${color}"/>
-    <rect x="5"  y="4" width="3"  height="4" fill="${color}"/>
-    <rect x="11" y="4" width="2"  height="4" fill="${color}"/>
-    <!-- Main body rows 8-10 -->
-    <rect x="1"  y="8" width="12" height="3" fill="${color}"/>
-    <!-- Skirt: 3 feet bases (row 11) -->
-    <rect x="1"  y="11" width="3" height="1" fill="${color}"/>
-    <rect x="5"  y="11" width="3" height="1" fill="${color}"/>
-    <rect x="9"  y="11" width="3" height="1" fill="${color}"/>
-    <!-- Skirt: 3 feet tips (row 12) -->
-    <rect x="1"  y="12" width="2" height="1" fill="${color}"/>
-    <rect x="5"  y="12" width="2" height="1" fill="${color}"/>
-    <rect x="9"  y="12" width="2" height="1" fill="${color}"/>
-    <!-- Left eye white -->
-    <rect x="2" y="4" width="3" height="4" fill="white"/>
-    <!-- Left pupil — animates x between 2 (left-facing) and 4 (right-facing) -->
-    <rect y="6" width="1" height="2" fill="#1a1a1a">
-      <animate attributeName="x" values="${leftPupilX}"
-        keyTimes="${keyTimes}" dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-    </rect>
-    <!-- Right eye white -->
-    <rect x="8" y="4" width="3" height="4" fill="white"/>
-    <!-- Right pupil — animates x between 8 (left-facing) and 10 (right-facing) -->
-    <rect y="6" width="1" height="2" fill="#1a1a1a">
-      <animate attributeName="x" values="${rightPupilX}"
-        keyTimes="${keyTimes}" dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-    </rect>
-  </g>`;
-}
-function createSvg(grid, options = {}) {
-    const { includeGhosts = true, colorScheme = "dark" } = options;
-    const step = CELL_SIZE + CELL_GAP;
-    const width = grid.cols * step + PADDING * 2;
-    const height = grid.rows * step + PADDING * 2;
-    const bg = colorScheme === "dark" ? "#0d1117" : "#ffffff";
+function createSvg(grid, theme, options = {}) {
+    const { colorScheme = "dark" } = options;
+    const formation = (0, theme_1.chooseFormation)(theme, options.formation ?? undefined);
+    const { cellSize, cellGap, padding, stepDuration } = theme.layout;
+    const step = cellSize + cellGap;
+    const width = grid.cols * step + padding * 2;
+    const height = grid.rows * step + padding * 2;
+    const bg = theme.background[colorScheme] ?? theme.background.dark;
+    const title = options.title ?? `GitHub Contributions — ${theme.name}`;
     const n = grid.path.length;
-    if (n === 0)
+    if (n === 0) {
         return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="${bg}"/></svg>`;
-    const totalDuration = n * STEP_DURATION;
-    // Shared keyTimes string — same for Pac-Man AND all ghosts
+    }
+    const totalDuration = n * stepDuration;
+    // Shared keyTimes string — same for the leader AND every follower.
     const keyTimes = grid.path
         .map((_, i) => (n === 1 ? "0" : (i / (n - 1)).toFixed(4)))
         .join(";");
+    // Sprites are emitted into <defs> only if something actually uses them, so a
+    // `single` run never carries the followers' artwork.
+    const used = new Set();
+    const sprite = (name) => {
+        const found = theme.sprites[name];
+        if (!found)
+            throw new Error(`theme "${theme.id}" has no sprite named "${name}"`);
+        used.add(name);
+        return found;
+    };
     // ── Eat-time lookup: "col,row" → step index ──
     const eatTime = new Map();
     grid.path.forEach((s, i) => {
         if (s.eating)
             eatTime.set(`${s.col},${s.row}`, i);
     });
-    // ── All 52×7 cells ──
+    // ── Grid cells ──
     const wallCells = [];
     const floorCells = [];
-    const dotCells = [];
+    const itemCells = [];
     for (let c = 0; c < grid.cols; c++) {
         for (let r = 0; r < grid.rows; r++) {
             const cell = grid.cells[c][r];
-            const x = PADDING + c * step;
-            const y = PADDING + r * step;
+            const x = padding + c * step;
+            const y = padding + r * step;
             if (cell.cellType === "wall") {
-                wallCells.push(renderWall(x, y));
+                if (theme.terrain.wall)
+                    wallCells.push((0, theme_1.placeSprite)(sprite(theme.terrain.wall), x, y));
+                continue;
             }
-            else if (cell.cellType === "floor") {
-                floorCells.push(renderFloor(x, y));
+            if (cell.cellType === "floor") {
+                if (theme.terrain.floor)
+                    floorCells.push((0, theme_1.placeSprite)(sprite(theme.terrain.floor), x, y));
+                continue;
             }
-            else {
-                // active dot or cherry — disappears when Pac-Man arrives
-                const arrival = eatTime.get(`${c},${r}`);
-                let opacityAnim = "";
-                if (arrival !== undefined) {
-                    const t0 = Math.max(0.0001, arrival / Math.max(1, n - 1));
-                    const t1 = Math.min(t0 + 0.005, 0.9999);
-                    opacityAnim = `<animate attributeName="opacity" values="1;1;0;0"
+            // A collectible — it disappears the moment the leader arrives.
+            const arrival = eatTime.get(`${c},${r}`);
+            let eatAnim = "";
+            if (arrival !== undefined) {
+                const t0 = Math.max(0.0001, arrival / Math.max(1, n - 1));
+                const t1 = Math.min(t0 + 0.005, 0.9999);
+                eatAnim = `<animate attributeName="opacity" values="1;1;0;0"
             keyTimes="0;${t0.toFixed(4)};${t1.toFixed(4)};1"
             dur="${totalDuration}s" repeatCount="indefinite"/>`;
-                }
-                if (cell.cellType === "cherry") {
-                    dotCells.push(renderCherry(x, y, opacityAnim));
-                }
-                else {
-                    dotCells.push(renderDot(x, y, opacityAnim));
-                }
             }
+            // Falls back to the pellet when the grid holds a bonus the theme does not
+            // define, so a grid and a theme can always be paired.
+            const name = cell.cellType === "bonus" && theme.collectibles.bonus
+                ? theme.collectibles.bonus.sprite
+                : theme.collectibles.pellet;
+            itemCells.push((0, theme_1.placeSprite)(sprite(name), x, y, { children: eatAnim }));
         }
     }
-    // ── Pac-Man ──
-    const pacTranslate = grid.path
-        .map((s) => `${PADDING + s.col * step},${PADDING + s.row * step}`)
-        .join(";");
-    const pacRotate = grid.path
-        .map((s) => `${DIR_ANGLE[s.direction]},7,7`)
-        .join(";");
-    const pacman = renderPacman(pacTranslate, pacRotate, keyTimes, totalDuration);
-    // ── Ghosts — snake chain: ghost k is always exactly `offset` steps behind Pac-Man ──
-    // Colors match the user's four ghost variants: red, pink, yellow, neon blue
-    const GHOST_COLORS = ["#FF0000", "#FFB8FF", "#FFD700", "#29ABE2"];
-    const GHOST_OFFSETS = [4, 8, 12, 16];
-    let ghosts = "";
-    if (includeGhosts) {
-        ghosts = GHOST_COLORS.map((color, gi) => {
-            const offset = GHOST_OFFSETS[gi];
-            // At step i this ghost occupies path[max(0, i - offset)]
-            const src = (i) => grid.path[Math.max(0, i - offset)];
-            const translateValues = grid.path
-                .map((_, i) => `${PADDING + src(i).col * step},${PADDING + src(i).row * step}`)
-                .join(";");
-            // Pupil x positions update with the ghost's own movement direction
-            const leftPupilX = grid.path
-                .map((_, i) => PUPIL_X[src(i).direction].left)
-                .join(";");
-            const rightPupilX = grid.path
-                .map((_, i) => PUPIL_X[src(i).direction].right)
-                .join(";");
-            return renderGhost(color, translateValues, leftPupilX, rightPupilX, keyTimes, totalDuration);
-        }).join("\n");
-    }
+    // ── Figures ──
+    const context = { grid, theme, sprite, keyTimes, totalDuration, step, padding, cellSize };
+    const leader = renderFigure(theme.leader, context);
+    const followers = formation === "train" ? theme.followers.map((f) => renderFigure(f, context)) : [];
+    const defs = collectDefs(theme, used);
     return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"
+<svg xmlns="http://www.w3.org/2000/svg"${defs ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : ""}
      viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-  <title>GitHub Contributions — Pac-Man</title>
+  <title>${escapeText(title)}</title>
   <rect width="${width}" height="${height}" fill="${bg}" rx="6"/>
-
+${defs}
   <!-- Walls (inactive, no active neighbors) -->
   ${wallCells.join("\n  ")}
 
   <!-- Floor / corridors (inactive, adjacent to active) -->
   ${floorCells.join("\n  ")}
 
-  <!-- Active dots (disappear as Pac-Man eats them) -->
-  ${dotCells.join("\n  ")}
+  <!-- Collectibles (disappear as the leader eats them) -->
+  ${itemCells.join("\n  ")}
 
-  <!-- Ghosts — trailing Pac-Man at fixed offsets (snake chain, no growth) -->
-  ${ghosts}
+  <!-- Followers — trailing the leader at fixed offsets (snake chain, no growth) -->
+  ${followers.join("\n")}
 
-  <!-- Pac-Man -->
-  ${pacman}
+  <!-- Leader -->
+  ${leader}
 </svg>`;
 }
+/**
+ * Draws one figure and animates it along the path.
+ *
+ * A follower with offset `k` occupies the leader's position from `k` steps ago, so
+ * the whole train walks the same route without any of them needing to know about
+ * each other. Before the animation is `k` steps old they all pile on the start
+ * cell, which is what makes the train emerge from a single point.
+ */
+function renderFigure(figure, context) {
+    const { grid, keyTimes, totalDuration, step, padding, cellSize } = context;
+    const at = (i) => grid.path[Math.max(0, i - figure.offset)];
+    const headings = grid.path.map((_, i) => at(i).direction);
+    const translate = grid.path
+        .map((_, i) => `${padding + at(i).col * step},${padding + at(i).row * step}`)
+        .join(";");
+    // Sprite-declared direction series become per-step animation values.
+    const series = (table) => headings.map((d) => table[d]).join(";");
+    const vars = { ...figure.vars, keyTimes, dur: String(totalDuration) };
+    const body = renderPoses(figure, headings, context, { vars, series });
+    const inner = figure.rotate
+        ? `<g>
+      <animateTransform attributeName="transform" type="rotate"
+        values="${grid.path.map((_, i) => `${DIR_ANGLE[at(i).direction]},${cellSize / 2},${cellSize / 2}`).join(";")}"
+        keyTimes="${keyTimes}"
+        dur="${totalDuration}s" repeatCount="indefinite" calcMode="discrete"/>
+      ${body}
+    </g>`
+        : body;
+    return `
+  <g>
+    <animateTransform attributeName="transform" type="translate"
+      values="${translate}" keyTimes="${keyTimes}"
+      dur="${totalDuration}s" repeatCount="indefinite" calcMode="discrete"/>
+    ${inner}
+  </g>`;
+}
+/**
+ * Renders the figure's artwork for every direction it actually travels in.
+ *
+ * A figure whose four directions resolve to one sprite — anything that rotates, or
+ * ignores its heading — is drawn once. A figure with distinct poses draws each one
+ * and cross-fades between them on the step clock, since swapping artwork is not
+ * something a transform can express.
+ */
+function renderPoses(figure, headings, context, spriteContext) {
+    const { keyTimes, totalDuration } = context;
+    const perStep = headings.map((d) => figure.sprites[d]);
+    const distinct = [...new Set(perStep)];
+    if (distinct.length === 1) {
+        return (0, theme_1.renderSprite)(context.sprite(distinct[0]), spriteContext);
+    }
+    return distinct
+        .map((name) => {
+        const values = perStep.map((p) => (p === name ? 1 : 0));
+        return `<g opacity="${values[0]}">
+      <animate attributeName="opacity" values="${values.join(";")}"
+        keyTimes="${keyTimes}" dur="${totalDuration}s" repeatCount="indefinite" calcMode="discrete"/>
+      ${(0, theme_1.renderSprite)(context.sprite(name), spriteContext)}
+    </g>`;
+    })
+        .join("\n      ");
+}
+/** Emits `<defs>` for the symbol sprites this drawing actually referenced. */
+function collectDefs(theme, used) {
+    const symbols = new Map();
+    for (const name of used) {
+        const sprite = theme.sprites[name];
+        if (sprite?.kind === "symbol" && sprite.symbolId && sprite.symbolDefs) {
+            symbols.set(sprite.symbolId, sprite.symbolDefs);
+        }
+    }
+    if (symbols.size === 0)
+        return "";
+    return `\n  <defs>\n    ${[...symbols.values()].join("\n    ")}\n  </defs>\n`;
+}
+function escapeText(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 //# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ 712:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * The doggie kit: dogs working through a yard of biscuits.
+ *
+ * This theme is the file-based half of the sprite model, and it is deliberately
+ * built the way an installed theme would be — artwork on disk, referenced by
+ * relative path, with each left-facing pose derived by mirroring the right-facing
+ * one. Nothing here reaches for a capability a third-party theme lacks.
+ *
+ * Dogs are not radially symmetric, so they never rotate: a dog heading up keeps
+ * its feet down and simply faces the way Pac-Man's ghosts do (up reads as right,
+ * down as left).
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.dogsTheme = void 0;
+/** Artwork lives under `assets/doggie-kit/`, the directory this theme loads from. */
+const BREEDS = ["corgi", "shiba", "dachshund", "german"];
+/** A right-facing sprite from file, plus its mirrored left-facing twin. */
+function breedSprites(breed) {
+    return {
+        [`${breed}_right`]: { file: `sprites/${breed}_right.svg` },
+        // Mirrors the resolved right-facing sprite: same <symbol>, no extra bytes.
+        [`${breed}_left`]: { from: `${breed}_right`, flipX: true },
+    };
+}
+/** Vertical travel reads as sideways, matching how the ghosts handle it. */
+function dogFigure(breed) {
+    return {
+        id: breed,
+        sprites: {
+            right: `${breed}_right`,
+            up: `${breed}_right`,
+            left: `${breed}_left`,
+            down: `${breed}_left`,
+        },
+    };
+}
+exports.dogsTheme = {
+    schemaVersion: 1,
+    id: "dogs",
+    name: "Doggie Kit",
+    description: "A dog trotting through the yard eating biscuits. No cherries in sight.",
+    background: { dark: "#0d1117", light: "#ffffff" },
+    sprites: {
+        ...BREEDS.reduce((all, breed) => ({ ...all, ...breedSprites(breed) }), {}),
+        // Left a little small so neighbouring biscuits do not touch.
+        biscuit: { file: "sprites/dogbiscuit.svg", scale: 0.75 },
+        // The kit ships no terrain art, so the yard is drawn here: hedge blocks for
+        // walls, and the same quiet cell as Pac-Man's corridors for the floor.
+        hedge: {
+            inline: `<rect x="1" y="1" width="12" height="12" rx="3"
+    fill="#16281a" stroke="#4a7c3f" stroke-width="1.5"/>`,
+        },
+        ground: {
+            inline: `<rect x="2" y="2" width="10" height="10" rx="2" fill="#161b22"/>`,
+        },
+    },
+    terrain: { wall: "hedge", floor: "ground" },
+    // Dogs eat biscuits, and only biscuits — omitting `bonus` means the grid never
+    // promotes a day to a rare collectible at all.
+    collectibles: { pellet: "biscuit" },
+    figures: {
+        leader: dogFigure("corgi"),
+        followers: BREEDS.slice(1).map(dogFigure),
+        followerSpacing: 4,
+    },
+    // One dog by default: the artwork is detailed, and four copies of it is a lot
+    // of SVG to serve from a README. `--formation train` opts into the whole pack.
+    defaultFormation: "single",
+};
+//# sourceMappingURL=dogs.js.map
+
+/***/ }),
+
+/***/ 5483:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * The original skin: Pac-Man eating dots and cherries, four ghosts in tow.
+ *
+ * Every sprite here is inline markup in cell coordinates, which is what a
+ * hand-drawn primitive wants to be — it costs a few dozen bytes per cell and can
+ * carry its own animation, so the mouth chomps and the ghosts' pupils track
+ * their heading without the renderer knowing anything about either.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.pacmanTheme = void 0;
+/** Pixel-art cherry, traced from `assets/pacman-kit/sprites/cherry.svg`. */
+const CHERRY = (() => {
+    const t = (x, y, w, h, fill) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"/>`;
+    const leaf = "#3a7d44";
+    const flesh = "#cc1100";
+    const shine = "#ff5555";
+    return `<g>
+    {{children}}
+    ${t(6, 0, 2, 1, leaf)}
+    ${t(5, 1, 1, 1, leaf)}${t(8, 1, 1, 1, leaf)}
+    ${t(4, 2, 1, 1, leaf)}${t(9, 2, 1, 1, leaf)}
+    ${t(3, 3, 1, 1, leaf)}${t(10, 3, 1, 1, leaf)}
+    ${t(2, 4, 3, 1, flesh)}${t(9, 4, 3, 1, flesh)}
+    ${t(1, 5, 5, 3, flesh)}${t(8, 5, 5, 3, flesh)}
+    ${t(2, 8, 3, 1, flesh)}${t(9, 8, 3, 1, flesh)}
+    ${t(2, 5, 1, 1, shine)}${t(9, 5, 1, 1, shine)}
+  </g>`;
+})();
+/**
+ * Pixel-art ghost. `{{color}}` comes from each ghost figure's `vars`, so one
+ * sprite covers all four; `{{pupilLeft}}`/`{{pupilRight}}` are direction series
+ * the renderer expands into a per-step `values` list, which is how the eyes end
+ * up looking where the ghost is going.
+ */
+const GHOST = `<!-- Top dome -->
+    <rect x="4"  y="0" width="6"  height="1" fill="{{color}}"/>
+    <rect x="3"  y="1" width="8"  height="1" fill="{{color}}"/>
+    <rect x="2"  y="2" width="10" height="1" fill="{{color}}"/>
+    <rect x="1"  y="3" width="12" height="1" fill="{{color}}"/>
+    <!-- Eye-row body (left edge, centre, right edge) -->
+    <rect x="1"  y="4" width="1"  height="4" fill="{{color}}"/>
+    <rect x="5"  y="4" width="3"  height="4" fill="{{color}}"/>
+    <rect x="11" y="4" width="2"  height="4" fill="{{color}}"/>
+    <!-- Main body rows 8-10 -->
+    <rect x="1"  y="8" width="12" height="3" fill="{{color}}"/>
+    <!-- Skirt: 3 feet bases (row 11) -->
+    <rect x="1"  y="11" width="3" height="1" fill="{{color}}"/>
+    <rect x="5"  y="11" width="3" height="1" fill="{{color}}"/>
+    <rect x="9"  y="11" width="3" height="1" fill="{{color}}"/>
+    <!-- Skirt: 3 feet tips (row 12) -->
+    <rect x="1"  y="12" width="2" height="1" fill="{{color}}"/>
+    <rect x="5"  y="12" width="2" height="1" fill="{{color}}"/>
+    <rect x="9"  y="12" width="2" height="1" fill="{{color}}"/>
+    <!-- Left eye white -->
+    <rect x="2" y="4" width="3" height="4" fill="white"/>
+    <!-- Left pupil — 2 when facing left, 4 when facing right -->
+    <rect y="6" width="1" height="2" fill="#1a1a1a">
+      <animate attributeName="x" values="{{pupilLeft}}"
+        keyTimes="{{keyTimes}}" dur="{{dur}}s" repeatCount="indefinite" calcMode="discrete"/>
+    </rect>
+    <!-- Right eye white -->
+    <rect x="8" y="4" width="3" height="4" fill="white"/>
+    <!-- Right pupil — 8 when facing left, 10 when facing right -->
+    <rect y="6" width="1" height="2" fill="#1a1a1a">
+      <animate attributeName="x" values="{{pupilRight}}"
+        keyTimes="{{keyTimes}}" dur="{{dur}}s" repeatCount="indefinite" calcMode="discrete"/>
+    </rect>`;
+/** Vertical travel reads as sideways for the eyes: up looks right, down looks left. */
+const PUPIL_LEFT = { right: 4, left: 2, up: 4, down: 2 };
+const PUPIL_RIGHT = { right: 10, left: 8, up: 10, down: 8 };
+const GHOST_COLORS = [
+    { id: "blinky", color: "#FF0000" },
+    { id: "pinky", color: "#FFB8FF" },
+    { id: "clyde", color: "#FFD700" },
+    { id: "inky", color: "#29ABE2" },
+];
+exports.pacmanTheme = {
+    schemaVersion: 1,
+    id: "pacman",
+    name: "Pac-Man",
+    description: "Pac-Man eats dots and cherries with four ghosts trailing behind.",
+    background: { dark: "#0d1117", light: "#ffffff" },
+    sprites: {
+        wall: {
+            // Blue-outlined rect — classic Pac-Man maze wall look.
+            inline: `<rect x="1" y="1" width="12" height="12" rx="1.5"
+    fill="#0f1b3d" stroke="#3b82f6" stroke-width="1.5"/>`,
+        },
+        floor: {
+            inline: `<rect x="2" y="2" width="10" height="10" rx="2" fill="#161b22"/>`,
+        },
+        dot: {
+            inline: `<circle cx="7" cy="7" r="3.5" fill="#FFD700">{{children}}</circle>`,
+        },
+        cherry: { inline: CHERRY },
+        pacman: {
+            // Facing right, centred at (7,7); the mouth chomps on its own clock.
+            inline: `<path fill="#FFD700">
+        <animate attributeName="d"
+          values="M7,7 L13,4 A6,6 0,1,0 13,10 Z;M7,7 L13,6.8 A6,6 0,1,0 13,7.2 Z;M7,7 L13,4 A6,6 0,1,0 13,10 Z"
+          dur="0.3s" repeatCount="indefinite"/>
+      </path>`,
+        },
+        ghost: {
+            inline: GHOST,
+            series: { pupilLeft: PUPIL_LEFT, pupilRight: PUPIL_RIGHT },
+        },
+    },
+    terrain: { wall: "wall", floor: "floor" },
+    collectibles: {
+        pellet: "dot",
+        bonus: { sprite: "cherry", rate: 0.025 },
+    },
+    figures: {
+        // Pac-Man is radially symmetric, so rotating him to face his heading is right.
+        leader: { id: "pacman", sprite: "pacman", rotate: true },
+        followers: GHOST_COLORS.map(({ id, color }) => ({ id, sprite: "ghost", vars: { color } })),
+        followerSpacing: 4,
+    },
+    defaultFormation: "train",
+};
+//# sourceMappingURL=pacman.js.map
+
+/***/ }),
+
+/***/ 8235:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * Themes — the skin layer.
+ *
+ * A theme describes what the animation looks like: the artwork, what the leader
+ * eats, and who follows it. The grid and the renderer know nothing about Pac-Man
+ * or dogs; they ask a theme for markup. Adding a skin means adding a manifest, not
+ * touching either.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.dogsTheme = exports.pacmanTheme = exports.MANIFEST_FILENAME = exports.findAssetsRoot = exports.builtinThemeIds = exports.discoverThemes = exports.listBuiltinThemes = exports.createDirectoryLoader = exports.loadThemeFromDirectory = exports.loadTheme = exports.attrValue = exports.sanitizeSvgMarkup = exports.parseSvgDocument = exports.resolveSprites = exports.placeSprite = exports.renderSprite = exports.DEFAULT_BACKGROUND = exports.DEFAULT_LAYOUT = exports.chooseFormation = exports.resolveTheme = void 0;
+__exportStar(__nccwpck_require__(6714), exports);
+var manifest_1 = __nccwpck_require__(1494);
+Object.defineProperty(exports, "resolveTheme", ({ enumerable: true, get: function () { return manifest_1.resolveTheme; } }));
+Object.defineProperty(exports, "chooseFormation", ({ enumerable: true, get: function () { return manifest_1.chooseFormation; } }));
+Object.defineProperty(exports, "DEFAULT_LAYOUT", ({ enumerable: true, get: function () { return manifest_1.DEFAULT_LAYOUT; } }));
+Object.defineProperty(exports, "DEFAULT_BACKGROUND", ({ enumerable: true, get: function () { return manifest_1.DEFAULT_BACKGROUND; } }));
+var sprite_1 = __nccwpck_require__(5594);
+Object.defineProperty(exports, "renderSprite", ({ enumerable: true, get: function () { return sprite_1.renderSprite; } }));
+Object.defineProperty(exports, "placeSprite", ({ enumerable: true, get: function () { return sprite_1.placeSprite; } }));
+Object.defineProperty(exports, "resolveSprites", ({ enumerable: true, get: function () { return sprite_1.resolveSprites; } }));
+var svg_asset_1 = __nccwpck_require__(5180);
+Object.defineProperty(exports, "parseSvgDocument", ({ enumerable: true, get: function () { return svg_asset_1.parseSvgDocument; } }));
+Object.defineProperty(exports, "sanitizeSvgMarkup", ({ enumerable: true, get: function () { return svg_asset_1.sanitizeSvgMarkup; } }));
+Object.defineProperty(exports, "attrValue", ({ enumerable: true, get: function () { return svg_asset_1.attrValue; } }));
+var registry_1 = __nccwpck_require__(852);
+Object.defineProperty(exports, "loadTheme", ({ enumerable: true, get: function () { return registry_1.loadTheme; } }));
+Object.defineProperty(exports, "loadThemeFromDirectory", ({ enumerable: true, get: function () { return registry_1.loadThemeFromDirectory; } }));
+Object.defineProperty(exports, "createDirectoryLoader", ({ enumerable: true, get: function () { return registry_1.createDirectoryLoader; } }));
+Object.defineProperty(exports, "listBuiltinThemes", ({ enumerable: true, get: function () { return registry_1.listBuiltinThemes; } }));
+Object.defineProperty(exports, "discoverThemes", ({ enumerable: true, get: function () { return registry_1.discoverThemes; } }));
+Object.defineProperty(exports, "builtinThemeIds", ({ enumerable: true, get: function () { return registry_1.builtinThemeIds; } }));
+Object.defineProperty(exports, "findAssetsRoot", ({ enumerable: true, get: function () { return registry_1.findAssetsRoot; } }));
+Object.defineProperty(exports, "MANIFEST_FILENAME", ({ enumerable: true, get: function () { return registry_1.MANIFEST_FILENAME; } }));
+var pacman_1 = __nccwpck_require__(5483);
+Object.defineProperty(exports, "pacmanTheme", ({ enumerable: true, get: function () { return pacman_1.pacmanTheme; } }));
+var dogs_1 = __nccwpck_require__(712);
+Object.defineProperty(exports, "dogsTheme", ({ enumerable: true, get: function () { return dogs_1.dogsTheme; } }));
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ 1494:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+/**
+ * Manifest validation and resolution.
+ *
+ * `resolveTheme` is the single door every theme comes through — built-in skins
+ * and installed ones alike — so a third-party theme is never a second-class
+ * citizen, and a broken one fails with a message naming the field at fault
+ * rather than emitting a subtly wrong drawing.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DEFAULT_BACKGROUND = exports.DEFAULT_LAYOUT = void 0;
+exports.resolveTheme = resolveTheme;
+exports.chooseFormation = chooseFormation;
+const types_1 = __nccwpck_require__(6714);
+const sprite_1 = __nccwpck_require__(5594);
+exports.DEFAULT_LAYOUT = {
+    cellSize: 14,
+    cellGap: 2,
+    padding: 20,
+    stepDuration: 0.08,
+};
+exports.DEFAULT_BACKGROUND = {
+    dark: "#0d1117",
+    light: "#ffffff",
+};
+const DEFAULT_FOLLOWER_SPACING = 4;
+const ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
+/**
+ * Validates a manifest and resolves every reference in it: sprite artwork is
+ * read and sanitized, derived poses are built, figures get a sprite for all four
+ * directions. The result is self-contained — the renderer never touches disk.
+ */
+function resolveTheme(manifest, options) {
+    const { source } = options;
+    const fail = (message) => {
+        throw new Error(`theme ${manifest?.id ? `"${manifest.id}" ` : ""}(${source}): ${message}`);
+    };
+    if (!manifest || typeof manifest !== "object")
+        fail("manifest is not an object");
+    if (manifest.schemaVersion !== 1) {
+        fail(`unsupported schemaVersion ${JSON.stringify(manifest.schemaVersion)} (expected 1)`);
+    }
+    if (typeof manifest.id !== "string" || !ID_PATTERN.test(manifest.id)) {
+        fail(`"id" must be a name like "doggie-kit" (got ${JSON.stringify(manifest.id)})`);
+    }
+    if (typeof manifest.name !== "string" || manifest.name.trim() === "")
+        fail(`"name" is required`);
+    const layout = {
+        cellSize: positive(manifest.layout?.cellSize, exports.DEFAULT_LAYOUT.cellSize, "layout.cellSize", fail),
+        cellGap: nonNegative(manifest.layout?.cellGap, exports.DEFAULT_LAYOUT.cellGap, "layout.cellGap", fail),
+        padding: nonNegative(manifest.layout?.padding, exports.DEFAULT_LAYOUT.padding, "layout.padding", fail),
+        stepDuration: positive(manifest.layout?.stepDuration, exports.DEFAULT_LAYOUT.stepDuration, "layout.stepDuration", fail),
+    };
+    if (!manifest.sprites || typeof manifest.sprites !== "object" || Object.keys(manifest.sprites).length === 0) {
+        fail(`"sprites" must declare at least one sprite`);
+    }
+    const loader = options.loader ??
+        {
+            readFile(relativePath) {
+                throw new Error(`sprite file "${relativePath}" cannot be read: this theme was loaded without a file loader`);
+            },
+        };
+    let sprites;
+    try {
+        sprites = (0, sprite_1.resolveSprites)(manifest.sprites, {
+            cellSize: layout.cellSize,
+            idPrefix: manifest.id.replace(/[^a-zA-Z0-9_-]+/g, "-"),
+            loader,
+            report: options.report,
+        });
+    }
+    catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+    }
+    const requireSprite = (name, field) => {
+        if (typeof name !== "string" || name === "")
+            fail(`${field} must name a sprite`);
+        if (!sprites[name]) {
+            fail(`${field} refers to unknown sprite "${name}" (declared: ${Object.keys(sprites).join(", ")})`);
+        }
+        return name;
+    };
+    if (!manifest.collectibles || typeof manifest.collectibles !== "object") {
+        fail(`"collectibles" is required (the leader has to eat something)`);
+    }
+    const pellet = requireSprite(manifest.collectibles.pellet, "collectibles.pellet");
+    let bonus;
+    if (manifest.collectibles.bonus) {
+        const rate = manifest.collectibles.bonus.rate;
+        if (typeof rate !== "number" || !Number.isFinite(rate) || rate < 0 || rate > 1) {
+            fail(`collectibles.bonus.rate must be a fraction between 0 and 1 (got ${JSON.stringify(rate)})`);
+        }
+        bonus = { sprite: requireSprite(manifest.collectibles.bonus.sprite, "collectibles.bonus.sprite"), rate };
+    }
+    const terrain = {
+        wall: manifest.terrain?.wall === undefined ? undefined : requireSprite(manifest.terrain.wall, "terrain.wall"),
+        floor: manifest.terrain?.floor === undefined ? undefined : requireSprite(manifest.terrain.floor, "terrain.floor"),
+    };
+    if (!manifest.figures?.leader)
+        fail(`"figures.leader" is required`);
+    const spacing = positive(manifest.figures.followerSpacing, DEFAULT_FOLLOWER_SPACING, "figures.followerSpacing", fail);
+    // The leader must walk the path in lockstep with it: collectibles disappear on the
+    // step index they are eaten at, so a leader trailing its own path would eat things
+    // it had not reached yet.
+    if (manifest.figures.leader.offset !== undefined && manifest.figures.leader.offset !== 0) {
+        fail(`figures.leader.offset must be 0 — only followers trail the path`);
+    }
+    const leader = resolveFigure(manifest.figures.leader, "figures.leader", "leader", 0, requireSprite, fail);
+    const followers = (manifest.figures.followers ?? []).map((spec, i) => resolveFigure(spec, `figures.followers[${i}]`, `follower-${i + 1}`, spacing * (i + 1), requireSprite, fail));
+    const defaultFormation = manifest.defaultFormation ?? (followers.length > 0 ? "train" : "single");
+    if (defaultFormation !== "single" && defaultFormation !== "train") {
+        fail(`"defaultFormation" must be "single" or "train" (got ${JSON.stringify(defaultFormation)})`);
+    }
+    return {
+        id: manifest.id,
+        name: manifest.name,
+        description: manifest.description,
+        author: manifest.author,
+        homepage: manifest.homepage,
+        source,
+        layout,
+        background: { ...exports.DEFAULT_BACKGROUND, ...manifest.background },
+        sprites,
+        terrain,
+        collectibles: { pellet, bonus },
+        leader,
+        followers,
+        defaultFormation,
+    };
+}
+function resolveFigure(spec, field, fallbackId, defaultOffset, requireSprite, fail) {
+    if (!spec || typeof spec !== "object")
+        fail(`${field} must be an object`);
+    if (spec.sprite === undefined && (!spec.sprites || Object.keys(spec.sprites).length === 0)) {
+        fail(`${field} must set "sprite" or "sprites"`);
+    }
+    const sprites = {};
+    for (const direction of types_1.DIRECTIONS) {
+        const name = spec.sprites?.[direction] ?? spec.sprite;
+        if (name === undefined) {
+            fail(`${field} has no sprite for direction "${direction}" (add it to "sprites", or set "sprite")`);
+        }
+        sprites[direction] = requireSprite(name, `${field}.sprites.${direction}`);
+    }
+    const offset = spec.offset ?? defaultOffset;
+    if (!Number.isInteger(offset) || offset < 0) {
+        fail(`${field}.offset must be a whole number of steps ≥ 0 (got ${JSON.stringify(spec.offset)})`);
+    }
+    return {
+        id: spec.id ?? fallbackId,
+        sprites,
+        rotate: spec.rotate === true,
+        offset,
+        vars: { ...spec.vars },
+    };
+}
+function positive(value, fallback, field, fail) {
+    if (value === undefined)
+        return fallback;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+        fail(`${field} must be a positive number (got ${JSON.stringify(value)})`);
+    }
+    return value;
+}
+function nonNegative(value, fallback, field, fail) {
+    if (value === undefined)
+        return fallback;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+        fail(`${field} must be a number ≥ 0 (got ${JSON.stringify(value)})`);
+    }
+    return value;
+}
+/** The formation a caller ends up with, given the theme's default and any override. */
+function chooseFormation(theme, requested) {
+    const formation = requested ?? theme.defaultFormation;
+    if (formation !== "single" && formation !== "train") {
+        throw new Error(`unknown formation "${formation}" (expected "single" or "train")`);
+    }
+    return formation;
+}
+//# sourceMappingURL=manifest.js.map
+
+/***/ }),
+
+/***/ 852:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * Finding and loading themes.
+ *
+ * Three sources, in priority order: a directory path the caller gave us, an
+ * installed theme found on the search path, or a built-in. The search path is the
+ * seam a theme marketplace plugs into — installing a theme means dropping a
+ * directory containing `theme.json` somewhere on it, and nothing in the renderer
+ * or the CLI has to learn about it.
+ */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.MANIFEST_FILENAME = void 0;
+exports.listBuiltinThemes = listBuiltinThemes;
+exports.builtinThemeIds = builtinThemeIds;
+exports.discoverThemes = discoverThemes;
+exports.loadTheme = loadTheme;
+exports.loadThemeFromDirectory = loadThemeFromDirectory;
+exports.createDirectoryLoader = createDirectoryLoader;
+exports.findAssetsRoot = findAssetsRoot;
+const fs_1 = __importDefault(__nccwpck_require__(9896));
+const path_1 = __importDefault(__nccwpck_require__(6928));
+const manifest_1 = __nccwpck_require__(1494);
+const pacman_1 = __nccwpck_require__(5483);
+const dogs_1 = __nccwpck_require__(712);
+/** Filename that marks a directory as a theme. */
+exports.MANIFEST_FILENAME = "theme.json";
+/** Refuses absurd artwork before it becomes an unservable SVG. */
+const MAX_SPRITE_BYTES = 4 * 1024 * 1024;
+/** Total artwork size that earns a warning — a README has to serve this. */
+const SPRITE_BUDGET_WARN_BYTES = 512 * 1024;
+const BUILTINS = {
+    [pacman_1.pacmanTheme.id]: { manifest: pacman_1.pacmanTheme },
+    [dogs_1.dogsTheme.id]: { manifest: dogs_1.dogsTheme, assetDir: "doggie-kit" },
+};
+/** Built-in themes, for `--list-themes` and error messages. */
+function listBuiltinThemes() {
+    return Object.values(BUILTINS).map(({ manifest }) => ({
+        id: manifest.id,
+        name: manifest.name,
+        description: manifest.description,
+        source: "built-in",
+    }));
+}
+function builtinThemeIds() {
+    return Object.keys(BUILTINS);
+}
+/**
+ * Every theme available to `loadTheme`: the ones installed on the search path
+ * first, since those shadow a built-in of the same id, then the built-ins.
+ *
+ * A directory is only reported if its manifest parses and declares an id, so a
+ * half-written theme shows up as a warning rather than as a listing entry.
+ */
+function discoverThemes(options = {}) {
+    const cwd = options.cwd ?? process.cwd();
+    const found = [];
+    const seen = new Set();
+    for (const root of searchPaths(options.searchPaths, cwd)) {
+        let entries;
+        try {
+            entries = fs_1.default.readdirSync(root, { withFileTypes: true });
+        }
+        catch {
+            continue; // A search path that does not exist is not an error.
+        }
+        for (const entry of entries) {
+            if (!entry.isDirectory() && !entry.isSymbolicLink())
+                continue;
+            const dir = path_1.default.join(root, entry.name);
+            if (!isThemeDirectory(dir))
+                continue;
+            try {
+                const manifest = JSON.parse(fs_1.default.readFileSync(path_1.default.join(dir, exports.MANIFEST_FILENAME), "utf8"));
+                if (typeof manifest.id !== "string" || manifest.id === "" || seen.has(manifest.id))
+                    continue;
+                seen.add(manifest.id);
+                found.push({
+                    id: manifest.id,
+                    name: typeof manifest.name === "string" ? manifest.name : manifest.id,
+                    description: manifest.description,
+                    source: dir,
+                });
+            }
+            catch (err) {
+                options.report?.warnings.push(`ignoring ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+    }
+    return [...found, ...listBuiltinThemes().filter((t) => !seen.has(t.id))];
+}
+/**
+ * Loads a theme by id or directory path.
+ *
+ * @param spec a built-in id (`pacman`), an installed theme id, or a path to a
+ *        directory containing `theme.json`.
+ */
+function loadTheme(spec, options = {}) {
+    const trimmed = (spec ?? "").trim();
+    if (trimmed === "")
+        throw new Error("no theme specified");
+    const cwd = options.cwd ?? process.cwd();
+    // An explicit path always wins, so a theme under development shadows a
+    // same-named built-in rather than being silently ignored.
+    if (looksLikePath(trimmed)) {
+        const dir = path_1.default.resolve(cwd, trimmed);
+        if (!isThemeDirectory(dir)) {
+            throw new Error(`no ${exports.MANIFEST_FILENAME} found in ${dir}`);
+        }
+        return loadThemeFromDirectory(dir, options.report);
+    }
+    for (const root of searchPaths(options.searchPaths, cwd)) {
+        const dir = path_1.default.resolve(root, trimmed);
+        if (isThemeDirectory(dir))
+            return loadThemeFromDirectory(dir, options.report);
+    }
+    const builtin = BUILTINS[trimmed];
+    if (!builtin) {
+        throw new Error(`unknown theme "${trimmed}". Built-in themes: ${builtinThemeIds().join(", ")}. ` +
+            `Pass a directory containing a ${exports.MANIFEST_FILENAME} to use your own.`);
+    }
+    return loadBuiltinTheme(builtin, options.report);
+}
+function searchPaths(explicit, cwd) {
+    if (explicit)
+        return explicit;
+    const fromEnv = (process.env.GIT_PACMAN_THEME_PATH ?? "")
+        .split(path_1.default.delimiter)
+        .filter((p) => p.trim() !== "");
+    return [path_1.default.resolve(cwd, "themes"), ...fromEnv];
+}
+function looksLikePath(spec) {
+    return spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("~") || spec.includes(path_1.default.sep);
+}
+function isThemeDirectory(dir) {
+    try {
+        return fs_1.default.statSync(path_1.default.join(dir, exports.MANIFEST_FILENAME)).isFile();
+    }
+    catch {
+        return false;
+    }
+}
+/** Loads a theme from a directory containing `theme.json` and its artwork. */
+function loadThemeFromDirectory(dir, report) {
+    const manifestPath = path_1.default.join(dir, exports.MANIFEST_FILENAME);
+    let manifest;
+    try {
+        manifest = JSON.parse(fs_1.default.readFileSync(manifestPath, "utf8"));
+    }
+    catch (err) {
+        throw new Error(`could not read ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return (0, manifest_1.resolveTheme)(manifest, {
+        source: dir,
+        loader: createDirectoryLoader(dir, report),
+        report,
+    });
+}
+function loadBuiltinTheme(builtin, report) {
+    const options = { source: "built-in", report };
+    if (builtin.assetDir) {
+        const dir = path_1.default.join(findAssetsRoot(), builtin.assetDir);
+        options.source = dir;
+        options.loader = createDirectoryLoader(dir, report);
+    }
+    return (0, manifest_1.resolveTheme)(builtin.manifest, options);
+}
+/**
+ * Reads sprite files from one directory and nowhere else.
+ *
+ * Containment is the point: a manifest is data, and once themes are installed
+ * from a marketplace, `"file": "../../../.ssh/id_rsa"` is a manifest away from
+ * being embedded in a published SVG.
+ */
+function createDirectoryLoader(dir, report) {
+    const root = path_1.default.resolve(dir);
+    let totalBytes = 0;
+    return {
+        readFile(relativePath) {
+            if (typeof relativePath !== "string" || relativePath.trim() === "") {
+                throw new Error(`sprite "file" must be a non-empty path`);
+            }
+            if (path_1.default.isAbsolute(relativePath)) {
+                throw new Error(`sprite file "${relativePath}" must be relative to the theme directory`);
+            }
+            const resolved = path_1.default.resolve(root, relativePath);
+            if (resolved !== root && !resolved.startsWith(root + path_1.default.sep)) {
+                throw new Error(`sprite file "${relativePath}" escapes the theme directory`);
+            }
+            if (path_1.default.extname(resolved).toLowerCase() !== ".svg") {
+                throw new Error(`sprite file "${relativePath}" must be an .svg file`);
+            }
+            let stat;
+            try {
+                stat = fs_1.default.statSync(resolved);
+            }
+            catch {
+                throw new Error(`sprite file "${relativePath}" not found in ${root}`);
+            }
+            if (!stat.isFile())
+                throw new Error(`sprite file "${relativePath}" is not a file`);
+            if (stat.size > MAX_SPRITE_BYTES) {
+                throw new Error(`sprite file "${relativePath}" is ${formatBytes(stat.size)}, over the ` +
+                    `${formatBytes(MAX_SPRITE_BYTES)} limit`);
+            }
+            totalBytes += stat.size;
+            if (totalBytes > SPRITE_BUDGET_WARN_BYTES) {
+                report?.warnings.push(`theme artwork totals ${formatBytes(totalBytes)}; the generated SVG will be large`);
+            }
+            return fs_1.default.readFileSync(resolved, "utf8");
+        },
+    };
+}
+/**
+ * Locates the bundled `assets/` directory.
+ *
+ * The compiled action is bundled to `dist/index.js` at the repo root, while the
+ * package runs from `packages/theme/dist/`, so the depth differs — walking up for
+ * the marker handles both. `GIT_PACMAN_ASSETS_DIR` overrides it outright.
+ */
+function findAssetsRoot() {
+    const override = process.env.GIT_PACMAN_ASSETS_DIR;
+    if (override)
+        return path_1.default.resolve(override);
+    const marker = path_1.default.join("pacman-kit", "sprites");
+    const starts = [__dirname, process.cwd()];
+    for (const start of starts) {
+        let dir = path_1.default.resolve(start);
+        for (let up = 0; up < 8; up++) {
+            const candidate = path_1.default.join(dir, "assets");
+            if (fs_1.default.existsSync(path_1.default.join(candidate, marker)))
+                return candidate;
+            const parent = path_1.default.dirname(dir);
+            if (parent === dir)
+                break;
+            dir = parent;
+        }
+    }
+    throw new Error("could not locate the bundled assets/ directory; set GIT_PACMAN_ASSETS_DIR to its path");
+}
+function formatBytes(bytes) {
+    return bytes >= 1024 * 1024
+        ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(bytes / 1024)} KB`;
+}
+//# sourceMappingURL=registry.js.map
+
+/***/ }),
+
+/***/ 5594:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+/**
+ * Sprite resolution and rendering.
+ *
+ * A `SpriteSpec` says where artwork comes from; a `ResolvedSprite` is that
+ * artwork ready to emit. The split matters for size: artwork with its own
+ * coordinate system is declared once as a `<symbol>` and drawn with `<use>`, so a
+ * 60 KB dog costs 60 KB whether it appears once or three hundred times, while a
+ * hand-written primitive stays inline where it is cheapest and can carry its own
+ * animation.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveSprites = resolveSprites;
+exports.renderSprite = renderSprite;
+exports.placeSprite = placeSprite;
+const svg_asset_1 = __nccwpck_require__(5180);
+/** Marks where injected markup goes inside a sprite, e.g. an eat animation. */
+const CHILDREN_TOKEN = "{{children}}";
+const PLACEHOLDER = /\{\{\s*([a-zA-Z_][\w]*)\s*\}\}/g;
+/**
+ * Resolves the whole sprite library at once, following `from` derivations.
+ *
+ * Derived sprites reuse the base sprite's `<symbol>` and only add a transform, so
+ * mirroring a sprite to face the other way is free.
+ */
+function resolveSprites(specs, options) {
+    const resolved = {};
+    const inProgress = new Set();
+    const resolveOne = (name) => {
+        const done = resolved[name];
+        if (done)
+            return done;
+        if (inProgress.has(name)) {
+            throw new Error(`sprite "${name}" derives from itself (circular "from" chain)`);
+        }
+        const spec = specs[name];
+        if (!spec)
+            throw new Error(`unknown sprite: "${name}"`);
+        inProgress.add(name);
+        try {
+            const sprite = spec.from
+                ? derive(name, spec, resolveOne(spec.from), options)
+                : fromSource(name, spec, options);
+            resolved[name] = sprite;
+            return sprite;
+        }
+        finally {
+            inProgress.delete(name);
+        }
+    };
+    for (const name of Object.keys(specs))
+        resolveOne(name);
+    return resolved;
+}
+/** Reads a sprite from its own artwork — a file, or inline markup. */
+function fromSource(name, spec, options) {
+    const { cellSize, idPrefix, loader, report } = options;
+    const sources = [spec.file, spec.inline].filter((s) => s !== undefined);
+    if (sources.length !== 1) {
+        throw new Error(`sprite "${name}" must set exactly one of "file", "inline" or "from"`);
+    }
+    const scale = spec.scale ?? 1;
+    if (!(scale > 0))
+        throw new Error(`sprite "${name}" has a non-positive scale: ${spec.scale}`);
+    const symbolId = `${idPrefix}-sprite-${slug(name)}`;
+    const raw = spec.file !== undefined ? loader.readFile(spec.file) : spec.inline;
+    const parsed = (0, svg_asset_1.parseSvgDocument)(raw, report);
+    const viewBox = spec.viewBox ?? parsed.viewBox;
+    // A viewBox means the artwork has its own coordinate system and must be fitted
+    // into the cell. Files always take the symbol path: they are arbitrarily large
+    // and typically drawn in many cells, so inlining them would blow up the output.
+    const needsSymbol = spec.file !== undefined || viewBox !== undefined;
+    const inner = (0, svg_asset_1.sanitizeSvgMarkup)(parsed.inner, symbolId, needsSymbol ? `#${symbolId}` : undefined, report);
+    if (!needsSymbol) {
+        return {
+            name,
+            kind: "inline",
+            markup: inner,
+            transform: scaleTransform(scale, cellSize),
+            series: spec.series ?? {},
+        };
+    }
+    const box = viewBox ?? `0 0 ${cellSize} ${cellSize}`;
+    return {
+        name,
+        kind: "symbol",
+        markup: useElement(symbolId, scale, cellSize),
+        symbolId,
+        symbolDefs: `<symbol id="${symbolId}" viewBox="${box}" preserveAspectRatio="xMidYMid meet">` +
+            `${inner}</symbol>`,
+        series: spec.series ?? {},
+    };
+}
+/**
+ * Builds a variant of an already-resolved sprite: mirrored, resized, or both.
+ *
+ * The artwork itself is shared — a derived sprite points at the same `<symbol>` or
+ * carries the same inline markup, and only wraps it in a transform. Mirroring a
+ * 60 KB drawing therefore costs nothing.
+ *
+ * Transforms compose outward-in: this sprite's mirror, then whatever the base
+ * already applied, then this sprite's own scale. A `scale` on a derived sprite
+ * multiplies the base's rather than replacing it.
+ */
+function derive(name, spec, base, options) {
+    if (spec.file !== undefined || spec.inline !== undefined) {
+        throw new Error(`sprite "${name}" cannot combine "from" with "file" or "inline"`);
+    }
+    const { cellSize } = options;
+    const scale = spec.scale ?? 1;
+    if (!(scale > 0))
+        throw new Error(`sprite "${name}" has a non-positive scale: ${spec.scale}`);
+    const parts = [];
+    // Mirror about the cell's centre so the artwork stays inside its cell.
+    if (spec.flipX || spec.flipY) {
+        const tx = spec.flipX ? cellSize : 0;
+        const ty = spec.flipY ? cellSize : 0;
+        parts.push(`translate(${tx},${ty})`, `scale(${spec.flipX ? -1 : 1},${spec.flipY ? -1 : 1})`);
+    }
+    if (base.transform)
+        parts.push(base.transform);
+    if (spec.scale !== undefined) {
+        const own = scaleTransform(scale, cellSize);
+        if (own)
+            parts.push(own);
+    }
+    return {
+        name,
+        kind: base.kind,
+        markup: base.markup,
+        symbolId: base.symbolId,
+        symbolDefs: base.symbolDefs,
+        transform: parts.length > 0 ? parts.join(" ") : undefined,
+        series: spec.series ?? base.series,
+    };
+}
+/** Centres a `<use>` box of `scale × cellSize` inside the cell. */
+function useElement(symbolId, scale, cellSize) {
+    const size = round(cellSize * scale);
+    const offset = round((cellSize - cellSize * scale) / 2);
+    const position = offset === 0 ? "" : ` x="${offset}" y="${offset}"`;
+    return `<use href="#${symbolId}" xlink:href="#${symbolId}"${position} width="${size}" height="${size}">${CHILDREN_TOKEN}</use>`;
+}
+function scaleTransform(scale, cellSize) {
+    if (scale === 1)
+        return undefined;
+    const offset = round((cellSize - cellSize * scale) / 2);
+    return offset === 0 ? `scale(${scale})` : `translate(${offset},${offset}) scale(${scale})`;
+}
+/**
+ * Renders one instance of a sprite in cell coordinates, with the origin at the
+ * cell's top-left corner. Callers position it themselves — grid cells with a
+ * `translate`, figures with an animated transform.
+ */
+function renderSprite(sprite, context = {}) {
+    const values = { ...context.vars };
+    for (const [key, table] of Object.entries(sprite.series)) {
+        if (context.series)
+            values[key] = context.series(table);
+    }
+    let markup = substitute(sprite, values);
+    markup = injectChildren(markup, context.children ?? "");
+    if (sprite.transform)
+        markup = `<g transform="${sprite.transform}">${markup}</g>`;
+    return markup;
+}
+/** Positions a sprite instance at an absolute point in the output. */
+function placeSprite(sprite, x, y, context = {}) {
+    const inner = renderSprite(sprite, context);
+    if (x === 0 && y === 0)
+        return inner;
+    return `<g transform="translate(${round(x)},${round(y)})">${inner}</g>`;
+}
+function substitute(sprite, values) {
+    return sprite.markup.replace(PLACEHOLDER, (all, key) => {
+        if (key === "children")
+            return all;
+        const value = values[key];
+        if (value === undefined) {
+            throw new Error(`sprite "${sprite.name}" references {{${key}}}, which the theme does not define ` +
+                `(add it to the figure's "vars" or the sprite's "series")`);
+        }
+        return value;
+    });
+}
+/**
+ * Places injected markup at the sprite's declared `{{children}}` point. Sprites
+ * that declare none are wrapped in a group, so the injected animation still
+ * applies to the whole drawing.
+ */
+function injectChildren(markup, children) {
+    if (markup.includes(CHILDREN_TOKEN)) {
+        return markup.split(CHILDREN_TOKEN).join(children);
+    }
+    return children ? `<g>${children}${markup}</g>` : markup;
+}
+function slug(name) {
+    return name.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "sprite";
+}
+function round(value) {
+    return Math.round(value * 1000) / 1000;
+}
+//# sourceMappingURL=sprite.js.map
+
+/***/ }),
+
+/***/ 5180:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * Reads third-party SVG artwork and makes it safe to paste into our document.
+ *
+ * Theme artwork is untrusted: once themes can be installed from a marketplace,
+ * an `.svg` is arbitrary markup running inside whatever page embeds the result.
+ * Everything here is about making that harmless while changing the drawing as
+ * little as possible:
+ *
+ *  - active content is removed (`<script>`, `<foreignObject>`, `on*` handlers);
+ *  - references may only point inside this document, so artwork cannot phone
+ *    home or leak a referrer when the animation renders;
+ *  - every `id` is prefixed, so two sprites that both define `#gradient1` do not
+ *    quietly steal each other's paint;
+ *  - `<style>` rules are scoped to the sprite that declared them, so one theme's
+ *    `path { fill: red }` cannot repaint the rest of the chart;
+ *  - tags are balanced, so a hand-edited file cannot break the document around it.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseSvgDocument = parseSvgDocument;
+exports.attrValue = attrValue;
+exports.sanitizeSvgMarkup = sanitizeSvgMarkup;
+/** Removed elements, with everything they contain. */
+const FORBIDDEN_ELEMENTS = ["script", "foreignObject", "iframe", "object", "embed", "audio", "video"];
+/** URI schemes an attribute may point at, besides same-document `#fragment`. */
+const ALLOWED_URI = /^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=\s]*$/i;
+/**
+ * Pulls the drawable content out of an SVG document.
+ *
+ * Tolerates the junk real-world exports carry: repeated XML declarations, a
+ * DOCTYPE, wrapper elements outside the root `<svg>`. Content outside the root
+ * element is dropped rather than trusted — so a file whose wrapper `<g>` is
+ * mis-nested (a common flip-by-hand mistake) loads as its *unflipped* artwork
+ * instead of emitting unbalanced markup. That case is reported, because the
+ * drawing silently loses whatever the stray wrapper was doing.
+ */
+function parseSvgDocument(source, report) {
+    const text = stripPreamble(source);
+    const open = /<svg\b[^>]*>/i.exec(text);
+    if (!open) {
+        // Not a document — treat the whole thing as bare markup in cell coordinates.
+        return { inner: text.trim() };
+    }
+    if (/<[a-z]/i.test(text.slice(0, open.index))) {
+        report?.warnings.push("markup before the root <svg> was dropped (mis-nested wrapper element)");
+    }
+    const close = text.lastIndexOf("</svg>");
+    const inner = close === -1 || close < open.index
+        ? text.slice(open.index + open[0].length)
+        : text.slice(open.index + open[0].length, close);
+    const viewBox = attrValue(open[0], "viewBox") ?? boxFromSize(open[0]);
+    return { inner: inner.trim(), viewBox };
+}
+function stripPreamble(source) {
+    return source
+        .replace(/<!--[\s\S]*?-->/g, "")
+        .replace(/<!DOCTYPE[^>[]*(\[[\s\S]*?\])?[^>]*>/gi, "")
+        .replace(/<\?[\s\S]*?\?>/g, "");
+}
+/** Falls back to `width`/`height` when the root `<svg>` has no viewBox. */
+function boxFromSize(openTag) {
+    const w = parseFloat(attrValue(openTag, "width") ?? "");
+    const h = parseFloat(attrValue(openTag, "height") ?? "");
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0)
+        return undefined;
+    return `0 0 ${w} ${h}`;
+}
+function attrValue(tag, name) {
+    const m = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i").exec(tag);
+    return m ? m[2] ?? m[3] : undefined;
+}
+/**
+ * Strips active content and rewrites every identifier and reference so the
+ * markup is inert and cannot collide with anything else in the document.
+ *
+ * @param idPrefix prepended to every `id` the markup declares.
+ * @param scopeSelector CSS selector that `<style>` rules are scoped under, e.g.
+ *        `#sprite-corgi`. Rules are left global when omitted.
+ */
+function sanitizeSvgMarkup(markup, idPrefix, scopeSelector, report) {
+    let out = stripPreamble(markup);
+    for (const el of FORBIDDEN_ELEMENTS) {
+        const before = out;
+        out = out
+            .replace(new RegExp(`<${el}\\b[^>]*>[\\s\\S]*?</${el}\\s*>`, "gi"), "")
+            .replace(new RegExp(`<${el}\\b[^>]*/>`, "gi"), "");
+        if (before !== out)
+            report?.warnings.push(`removed <${el}> element(s)`);
+    }
+    // Nested <svg> elements bring their own viewport and coordinate system; flatten
+    // them to plain groups so the sprite stays one drawing in cell coordinates.
+    out = out.replace(/<svg\b[^>]*>/gi, "<g>").replace(/<\/svg\s*>/gi, "</g>");
+    const ids = collectIds(out);
+    const rename = (id) => `${idPrefix}-${id}`;
+    out = out.replace(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi, (_all, css) => `<style>${scopeCss(css, ids, rename, scopeSelector, report)}</style>`);
+    out = out.replace(/<[^>]*>/g, (tag) => cleanTag(tag, ids, rename, report));
+    return balanceTags(out, report);
+}
+function collectIds(markup) {
+    const ids = new Set();
+    const re = /\sid\s*=\s*("([^"]*)"|'([^']*)')/gi;
+    let m;
+    while ((m = re.exec(markup)) !== null) {
+        const id = (m[2] ?? m[3] ?? "").trim();
+        if (id)
+            ids.add(id);
+    }
+    return ids;
+}
+function cleanTag(tag, ids, rename, report) {
+    // Event handlers: any attribute named on*.
+    let out = tag.replace(/\son[a-zA-Z]+\s*=\s*("[^"]*"|'[^']*'|[^\s/>]+)/g, () => {
+        report?.warnings.push("removed inline event handler");
+        return "";
+    });
+    // Identifier declarations.
+    out = out.replace(/(\sid\s*=\s*)("([^"]*)"|'([^']*)')/gi, (_all, lead, _q, dq, sq) => {
+        const id = (dq ?? sq ?? "").trim();
+        return id ? `${lead}"${rename(id)}"` : "";
+    });
+    // References: same-document fragments are rewritten, everything else dropped.
+    out = out.replace(/(\s(?:xlink:href|href)\s*=\s*)("([^"]*)"|'([^']*)')/gi, (all, lead, _q, dq, sq) => {
+        const value = (dq ?? sq ?? "").trim();
+        if (value.startsWith("#")) {
+            const id = value.slice(1);
+            return ids.has(id) ? `${lead}"#${rename(id)}"` : all;
+        }
+        if (ALLOWED_URI.test(value))
+            return all;
+        report?.warnings.push(`removed external reference: ${truncate(value)}`);
+        return "";
+    });
+    return rewriteUrlRefs(out, ids, rename, report);
+}
+/** Rewrites `url(#id)` inside paint and style attributes; drops remote `url()`. */
+function rewriteUrlRefs(text, ids, rename, report) {
+    return text.replace(/url\(\s*(['"]?)([^)'"]*)\1\s*\)/gi, (all, _q, target) => {
+        const value = target.trim();
+        if (value.startsWith("#")) {
+            const id = value.slice(1);
+            return ids.has(id) ? `url(#${rename(id)})` : all;
+        }
+        if (ALLOWED_URI.test(value))
+            return all;
+        report?.warnings.push(`removed external url(): ${truncate(value)}`);
+        return "none";
+    });
+}
+/**
+ * Scopes a sprite's CSS under `scopeSelector` and renames the ids it references.
+ * At-rules are left alone — they cannot be scoped by prefixing — and reported so
+ * a theme author knows their keyframes are shared with the whole document.
+ */
+function scopeCss(css, ids, rename, scopeSelector, report) {
+    // Angle brackets inside CSS would be read as markup by the tag passes that
+    // follow, so they are neutralized — which does change a child combinator into a
+    // descendant one, hence the warning rather than a silent rewrite.
+    let out = css;
+    if (/[<>]/.test(out)) {
+        report?.warnings.push("angle brackets in a <style> block were removed (use descendant selectors)");
+        out = out.replace(/[<>]/g, " ");
+    }
+    out = rewriteUrlRefs(out, ids, rename, report);
+    out = out.replace(/#([A-Za-z_][\w:.-]*)/g, (all, id) => (ids.has(id) ? `#${rename(id)}` : all));
+    if (!scopeSelector)
+        return out;
+    return out.replace(/(^|})([^{}]+)(\{)/g, (all, close, selectors, brace) => {
+        const trimmed = selectors.trim();
+        if (!trimmed)
+            return all;
+        if (trimmed.startsWith("@")) {
+            report?.warnings.push(`at-rule left unscoped: ${truncate(trimmed)}`);
+            return all;
+        }
+        const scoped = trimmed
+            .split(",")
+            .map((s) => `${scopeSelector} ${s.trim()}`)
+            .join(", ");
+        return `${close}${scoped} ${brace}`;
+    });
+}
+/**
+ * Drops closing tags with no matching open tag and closes anything left open, so
+ * a malformed sprite can never leak its nesting into the surrounding document.
+ *
+ * SVG is XML, which has no void elements: a tag either self-closes with `/>` or
+ * has a closing tag. `<circle>…</circle>` wrapping an `<animate>` is ordinary and
+ * must survive untouched.
+ */
+function balanceTags(markup, report) {
+    const stack = [];
+    let stray = 0;
+    const out = markup.replace(/<\/?([a-zA-Z][\w:.-]*)\b[^>]*>/g, (tag, name) => {
+        if (tag.startsWith("</")) {
+            const at = stack.lastIndexOf(name);
+            if (at === -1) {
+                stray++;
+                return "";
+            }
+            stack.length = at;
+            return tag;
+        }
+        if (!/\/>$/.test(tag))
+            stack.push(name);
+        return tag;
+    });
+    if (stray > 0)
+        report?.warnings.push(`dropped ${stray} unmatched closing tag(s)`);
+    if (stack.length > 0)
+        report?.warnings.push(`closed ${stack.length} unclosed element(s)`);
+    return out + stack.reverse().map((name) => `</${name}>`).join("");
+}
+function truncate(value) {
+    return value.length > 60 ? `${value.slice(0, 57)}…` : value;
+}
+//# sourceMappingURL=svg-asset.js.map
+
+/***/ }),
+
+/***/ 6714:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * The theme contract — everything a skin needs to describe itself.
+ *
+ * A theme is data, not code: a `ThemeManifest` plus the SVG files it points at.
+ * Built-in themes are manifests written in TypeScript (so sprite markup can be
+ * a readable template literal); third-party themes are a directory containing a
+ * `theme.json` manifest and its artwork. Both go through the same resolver, so a
+ * marketplace theme can do everything a built-in one can.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DIRECTIONS = void 0;
+exports.DIRECTIONS = ["right", "left", "up", "down"];
+//# sourceMappingURL=types.js.map
 
 /***/ }),
 

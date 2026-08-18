@@ -1,0 +1,14 @@
+{
+  "name": "@git-pacman/theme",
+  "version": "1.0.0",
+  "description": "Theme manifest format, sprite resolution and skin registry — how a visualization gets its figures",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

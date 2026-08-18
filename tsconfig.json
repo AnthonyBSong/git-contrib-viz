@@ -7,8 +7,11 @@
   },
   "references": [
     { "path": "packages/github-contributions" },
+    { "path": "packages/theme" },
     { "path": "packages/grid" },
     { "path": "packages/svg-creator" },
+    { "path": "packages/generator" },
+    { "path": "packages/cli" },
     { "path": "packages/action" }
   ]
 }

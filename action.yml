@@ -1,5 +1,5 @@
 name: 'Git-Pacman-Viz'
-description: 'Generates an animated Pac-Man eating your GitHub contribution dots and embeds it in your profile README'
+description: 'Generates an animated contribution chart — Pac-Man, dogs, or your own sprites — and embeds it in your profile README'
 branding:
   icon: 'circle'
   color: 'yellow'
@@ -17,10 +17,20 @@ inputs:
   color_scheme:
     description: 'Background color scheme: dark or light'
     default: 'dark'
+  theme:
+    description: 'Skin to draw with: a built-in id (pacman, dogs) or a path to a directory containing theme.json'
+    default: 'pacman'
+  formation:
+    description: 'How many figures walk the path: single (one figure) or train (followers trailing behind). Empty uses the theme default.'
+    default: ''
 
 outputs:
   svg_path:
     description: 'Path to the generated SVG file'
+  theme:
+    description: 'Id of the theme that was used'
+  formation:
+    description: 'Formation that was used: single or train'
 
 runs:
   using: 'node20'

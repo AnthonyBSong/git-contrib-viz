@@ -83,11 +83,15 @@ IN THE SOFTWARE.
 
 @git-pacman/action
 
+@git-pacman/generator
+
 @git-pacman/github-contributions
 
 @git-pacman/grid
 
 @git-pacman/svg-creator
+
+@git-pacman/theme
 
 tunnel
 MIT

@@ -1,7 +1,7 @@
 {
-  "name": "@git-pacman/grid",
+  "name": "@git-pacman/generator",
   "version": "1.0.0",
-  "description": "Builds the collectible grid and computes a traversal path through active cells",
+  "description": "Wires contributions, grid and theme into a finished SVG — shared by the CLI and the Action",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@git-pacman/github-contributions": "*",
+    "@git-pacman/grid": "*",
+    "@git-pacman/svg-creator": "*",
     "@git-pacman/theme": "*"
   },
   "devDependencies": {

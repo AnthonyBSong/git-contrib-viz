@@ -1,12 +1,31 @@
-import type { PacmanGrid, Direction } from "@git-pacman/grid";
+/**
+ * Turns a traversal grid plus a theme into one animated SVG.
+ *
+ * This module owns the timing and the geometry; the theme owns every mark on the
+ * page. Nothing here knows what a ghost or a biscuit is — it asks the theme for a
+ * sprite, positions it, and animates it along the path. That split is what lets a
+ * new skin be a manifest rather than a code change.
+ *
+ * Animation is SMIL with `calcMode="discrete"`, one keyframe per path step, so a
+ * figure snaps cell to cell the way an arcade sprite does. Every figure shares one
+ * `keyTimes` list and one duration, which is what keeps a train in lockstep.
+ */
 
-// ─── Layout ──────────────────────────────────────────────────────────────────
-const CELL_SIZE = 14;
-const CELL_GAP = 2;
-const PADDING = 20;
-const STEP_DURATION = 0.08; // seconds per path step
+import type { PathStep, TraversalGrid } from "@git-pacman/grid";
+import {
+  chooseFormation,
+  placeSprite,
+  renderSprite,
+  type ColorScheme,
+  type Direction,
+  type DirectionSeries,
+  type Formation,
+  type ResolvedFigure,
+  type ResolvedSprite,
+  type Theme,
+} from "@git-pacman/theme";
 
-// ─── Direction → rotation angle (Pac-Man faces right at 0°) ─────────────────
+/** Rotation applied to a figure that faces its heading. Sprites face right at 0°. */
 const DIR_ANGLE: Record<Direction, number> = {
   right: 0,
   down: 90,
@@ -14,160 +33,49 @@ const DIR_ANGLE: Record<Direction, number> = {
   up: 270,
 };
 
-// ─── Cell renderers ───────────────────────────────────────────────────────────
-// SPRITE: replace rect/circle shapes with custom artwork. Canvas is 14×14px.
-
-function renderWall(x: number, y: number): string {
-  // Blue-outlined rect — classic Pac-Man maze wall look
-  return `<rect x="${x + 1}" y="${y + 1}" width="12" height="12" rx="1.5"
-    fill="#0f1b3d" stroke="#3b82f6" stroke-width="1.5"/>`;
-}
-
-function renderFloor(x: number, y: number): string {
-  return `<rect x="${x + 2}" y="${y + 2}" width="10" height="10" rx="2" fill="#161b22"/>`;
-}
-
-function renderDot(x: number, y: number, opacityAnim: string): string {
-  // SPRITE: yellow pellet dot — replace circle with custom artwork
-  return `<circle cx="${x + 7}" cy="${y + 7}" r="3.5" fill="#FFD700">${opacityAnim}</circle>`;
-}
-
-function renderCherry(x: number, y: number, opacityAnim: string): string {
-  // SPRITE: pixel-art cherry — traced from assets/pacman-kit/sprites/cherry.svg (14×14 canvas).
-  // opacityAnim is a complete <animate> element placed inside the <g> to fade
-  // the whole cherry out when Pac-Man eats it.
-  const t = (dx: number, dy: number, w: number, h: number, fill: string) =>
-    `<rect x="${x + dx}" y="${y + dy}" width="${w}" height="${h}" fill="${fill}"/>`;
-  return `<g>
-    ${opacityAnim}
-    ${t(6, 0, 2, 1, "#3a7d44")}
-    ${t(5, 1, 1, 1, "#3a7d44")}${t(8, 1, 1, 1, "#3a7d44")}
-    ${t(4, 2, 1, 1, "#3a7d44")}${t(9, 2, 1, 1, "#3a7d44")}
-    ${t(3, 3, 1, 1, "#3a7d44")}${t(10, 3, 1, 1, "#3a7d44")}
-    ${t(2, 4, 3, 1, "#cc1100")}${t(9, 4, 3, 1, "#cc1100")}
-    ${t(1, 5, 5, 3, "#cc1100")}${t(8, 5, 5, 3, "#cc1100")}
-    ${t(2, 8, 3, 1, "#cc1100")}${t(9, 8, 3, 1, "#cc1100")}
-    ${t(2, 5, 1, 1, "#ff5555")}${t(9, 5, 1, 1, "#ff5555")}
-  </g>`;
-}
-
-// ─── Character renderers ──────────────────────────────────────────────────────
-// Each character uses nested <g> elements:
-//   outer <g>: animateTransform translate → moves to grid position
-//   inner <g>: animateTransform rotate   → faces movement direction
-//
-// SPRITE: replace shape elements inside inner <g> with custom artwork (14×14 canvas,
-// character should face RIGHT at 0°, centered at (7,7)).
-
-function renderPacman(
-  translateValues: string,
-  rotateValues: string,
-  keyTimes: string,
-  dur: number
-): string {
-  return `
-  <g>
-    <animateTransform attributeName="transform" type="translate"
-      values="${translateValues}" keyTimes="${keyTimes}"
-      dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-    <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="${rotateValues}" keyTimes="${keyTimes}"
-        dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-      <!-- SPRITE: Pac-Man body — facing right, centered at (7,7) -->
-      <path fill="#FFD700">
-        <animate attributeName="d"
-          values="M7,7 L13,4 A6,6 0,1,0 13,10 Z;M7,7 L13,6.8 A6,6 0,1,0 13,7.2 Z;M7,7 L13,4 A6,6 0,1,0 13,10 Z"
-          dur="0.3s" repeatCount="indefinite"/>
-      </path>
-    </g>
-  </g>`;
-}
-
-// Pupil x-positions per direction.
-// Left eye white: x=2..4. Right eye white: x=8..10.
-// Pupil is 1×2; right-facing → right side of eye; left-facing → left side.
-const PUPIL_X: Record<Direction, { left: number; right: number }> = {
-  right: { left: 4, right: 10 },
-  left:  { left: 2, right: 8  },
-  up:    { left: 4, right: 10 }, // treat up/down as right-facing
-  down:  { left: 2, right: 8  }, // treat down as left-facing
-};
-
-function renderGhost(
-  color: string,
-  translateValues: string,
-  leftPupilX: string,   // per-frame x for left-eye pupil
-  rightPupilX: string,  // per-frame x for right-eye pupil
-  keyTimes: string,
-  dur: number
-): string {
-  // SPRITE: pixel-art ghost traced from ghost_right.jpeg (14×14 canvas).
-  // Replace rect/circle shapes with custom artwork to reskin.
-  return `
-  <g>
-    <animateTransform attributeName="transform" type="translate"
-      values="${translateValues}" keyTimes="${keyTimes}"
-      dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-    <!-- Top dome -->
-    <rect x="4"  y="0" width="6"  height="1" fill="${color}"/>
-    <rect x="3"  y="1" width="8"  height="1" fill="${color}"/>
-    <rect x="2"  y="2" width="10" height="1" fill="${color}"/>
-    <rect x="1"  y="3" width="12" height="1" fill="${color}"/>
-    <!-- Eye-row body (left edge, centre, right edge) -->
-    <rect x="1"  y="4" width="1"  height="4" fill="${color}"/>
-    <rect x="5"  y="4" width="3"  height="4" fill="${color}"/>
-    <rect x="11" y="4" width="2"  height="4" fill="${color}"/>
-    <!-- Main body rows 8-10 -->
-    <rect x="1"  y="8" width="12" height="3" fill="${color}"/>
-    <!-- Skirt: 3 feet bases (row 11) -->
-    <rect x="1"  y="11" width="3" height="1" fill="${color}"/>
-    <rect x="5"  y="11" width="3" height="1" fill="${color}"/>
-    <rect x="9"  y="11" width="3" height="1" fill="${color}"/>
-    <!-- Skirt: 3 feet tips (row 12) -->
-    <rect x="1"  y="12" width="2" height="1" fill="${color}"/>
-    <rect x="5"  y="12" width="2" height="1" fill="${color}"/>
-    <rect x="9"  y="12" width="2" height="1" fill="${color}"/>
-    <!-- Left eye white -->
-    <rect x="2" y="4" width="3" height="4" fill="white"/>
-    <!-- Left pupil — animates x between 2 (left-facing) and 4 (right-facing) -->
-    <rect y="6" width="1" height="2" fill="#1a1a1a">
-      <animate attributeName="x" values="${leftPupilX}"
-        keyTimes="${keyTimes}" dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-    </rect>
-    <!-- Right eye white -->
-    <rect x="8" y="4" width="3" height="4" fill="white"/>
-    <!-- Right pupil — animates x between 8 (left-facing) and 10 (right-facing) -->
-    <rect y="6" width="1" height="2" fill="#1a1a1a">
-      <animate attributeName="x" values="${rightPupilX}"
-        keyTimes="${keyTimes}" dur="${dur}s" repeatCount="indefinite" calcMode="discrete"/>
-    </rect>
-  </g>`;
-}
-
-// ─── Main export ──────────────────────────────────────────────────────────────
 export interface SvgOptions {
-  includeGhosts?: boolean;
-  colorScheme?: "dark" | "light";
+  /**
+   * `single` draws the leader alone; `train` adds the theme's followers trailing
+   * behind it. Defaults to the theme's own preference.
+   */
+  formation?: Formation | null;
+  colorScheme?: ColorScheme;
+  /** Overrides the `<title>`, which screen readers announce. */
+  title?: string;
 }
 
-export function createSvg(grid: PacmanGrid, options: SvgOptions = {}): string {
-  const { includeGhosts = true, colorScheme = "dark" } = options;
+export function createSvg(grid: TraversalGrid, theme: Theme, options: SvgOptions = {}): string {
+  const { colorScheme = "dark" } = options;
+  const formation = chooseFormation(theme, options.formation ?? undefined);
+  const { cellSize, cellGap, padding, stepDuration } = theme.layout;
 
-  const step = CELL_SIZE + CELL_GAP;
-  const width = grid.cols * step + PADDING * 2;
-  const height = grid.rows * step + PADDING * 2;
-  const bg = colorScheme === "dark" ? "#0d1117" : "#ffffff";
+  const step = cellSize + cellGap;
+  const width = grid.cols * step + padding * 2;
+  const height = grid.rows * step + padding * 2;
+  const bg = theme.background[colorScheme] ?? theme.background.dark;
+  const title = options.title ?? `GitHub Contributions — ${theme.name}`;
 
   const n = grid.path.length;
-  if (n === 0) return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="${bg}"/></svg>`;
+  if (n === 0) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="${bg}"/></svg>`;
+  }
 
-  const totalDuration = n * STEP_DURATION;
+  const totalDuration = n * stepDuration;
 
-  // Shared keyTimes string — same for Pac-Man AND all ghosts
+  // Shared keyTimes string — same for the leader AND every follower.
   const keyTimes = grid.path
     .map((_, i) => (n === 1 ? "0" : (i / (n - 1)).toFixed(4)))
     .join(";");
+
+  // Sprites are emitted into <defs> only if something actually uses them, so a
+  // `single` run never carries the followers' artwork.
+  const used = new Set<string>();
+  const sprite = (name: string): ResolvedSprite => {
+    const found = theme.sprites[name];
+    if (!found) throw new Error(`theme "${theme.id}" has no sprite named "${name}"`);
+    used.add(name);
+    return found;
+  };
 
   // ── Eat-time lookup: "col,row" → step index ──
   const eatTime = new Map<string, number>();
@@ -175,99 +83,179 @@ export function createSvg(grid: PacmanGrid, options: SvgOptions = {}): string {
     if (s.eating) eatTime.set(`${s.col},${s.row}`, i);
   });
 
-  // ── All 52×7 cells ──
+  // ── Grid cells ──
   const wallCells: string[] = [];
   const floorCells: string[] = [];
-  const dotCells: string[] = [];
+  const itemCells: string[] = [];
 
   for (let c = 0; c < grid.cols; c++) {
     for (let r = 0; r < grid.rows; r++) {
       const cell = grid.cells[c][r];
-      const x = PADDING + c * step;
-      const y = PADDING + r * step;
+      const x = padding + c * step;
+      const y = padding + r * step;
 
       if (cell.cellType === "wall") {
-        wallCells.push(renderWall(x, y));
-      } else if (cell.cellType === "floor") {
-        floorCells.push(renderFloor(x, y));
-      } else {
-        // active dot or cherry — disappears when Pac-Man arrives
-        const arrival = eatTime.get(`${c},${r}`);
-        let opacityAnim = "";
-        if (arrival !== undefined) {
-          const t0 = Math.max(0.0001, arrival / Math.max(1, n - 1));
-          const t1 = Math.min(t0 + 0.005, 0.9999);
-          opacityAnim = `<animate attributeName="opacity" values="1;1;0;0"
+        if (theme.terrain.wall) wallCells.push(placeSprite(sprite(theme.terrain.wall), x, y));
+        continue;
+      }
+      if (cell.cellType === "floor") {
+        if (theme.terrain.floor) floorCells.push(placeSprite(sprite(theme.terrain.floor), x, y));
+        continue;
+      }
+
+      // A collectible — it disappears the moment the leader arrives.
+      const arrival = eatTime.get(`${c},${r}`);
+      let eatAnim = "";
+      if (arrival !== undefined) {
+        const t0 = Math.max(0.0001, arrival / Math.max(1, n - 1));
+        const t1 = Math.min(t0 + 0.005, 0.9999);
+        eatAnim = `<animate attributeName="opacity" values="1;1;0;0"
             keyTimes="0;${t0.toFixed(4)};${t1.toFixed(4)};1"
             dur="${totalDuration}s" repeatCount="indefinite"/>`;
-        }
-        if (cell.cellType === "cherry") {
-          dotCells.push(renderCherry(x, y, opacityAnim));
-        } else {
-          dotCells.push(renderDot(x, y, opacityAnim));
-        }
       }
+
+      // Falls back to the pellet when the grid holds a bonus the theme does not
+      // define, so a grid and a theme can always be paired.
+      const name =
+        cell.cellType === "bonus" && theme.collectibles.bonus
+          ? theme.collectibles.bonus.sprite
+          : theme.collectibles.pellet;
+      itemCells.push(placeSprite(sprite(name), x, y, { children: eatAnim }));
     }
   }
 
-  // ── Pac-Man ──
-  const pacTranslate = grid.path
-    .map((s) => `${PADDING + s.col * step},${PADDING + s.row * step}`)
-    .join(";");
-  const pacRotate = grid.path
-    .map((s) => `${DIR_ANGLE[s.direction]},7,7`)
-    .join(";");
+  // ── Figures ──
+  const context = { grid, theme, sprite, keyTimes, totalDuration, step, padding, cellSize };
+  const leader = renderFigure(theme.leader, context);
+  const followers =
+    formation === "train" ? theme.followers.map((f) => renderFigure(f, context)) : [];
 
-  const pacman = renderPacman(pacTranslate, pacRotate, keyTimes, totalDuration);
-
-  // ── Ghosts — snake chain: ghost k is always exactly `offset` steps behind Pac-Man ──
-  // Colors match the user's four ghost variants: red, pink, yellow, neon blue
-  const GHOST_COLORS = ["#FF0000", "#FFB8FF", "#FFD700", "#29ABE2"];
-  const GHOST_OFFSETS = [4, 8, 12, 16];
-
-  let ghosts = "";
-  if (includeGhosts) {
-    ghosts = GHOST_COLORS.map((color, gi) => {
-      const offset = GHOST_OFFSETS[gi];
-
-      // At step i this ghost occupies path[max(0, i - offset)]
-      const src = (i: number) => grid.path[Math.max(0, i - offset)];
-
-      const translateValues = grid.path
-        .map((_, i) => `${PADDING + src(i).col * step},${PADDING + src(i).row * step}`)
-        .join(";");
-
-      // Pupil x positions update with the ghost's own movement direction
-      const leftPupilX = grid.path
-        .map((_, i) => PUPIL_X[src(i).direction].left)
-        .join(";");
-      const rightPupilX = grid.path
-        .map((_, i) => PUPIL_X[src(i).direction].right)
-        .join(";");
-
-      return renderGhost(color, translateValues, leftPupilX, rightPupilX, keyTimes, totalDuration);
-    }).join("\n");
-  }
+  const defs = collectDefs(theme, used);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"
+<svg xmlns="http://www.w3.org/2000/svg"${defs ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : ""}
      viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-  <title>GitHub Contributions — Pac-Man</title>
+  <title>${escapeText(title)}</title>
   <rect width="${width}" height="${height}" fill="${bg}" rx="6"/>
-
+${defs}
   <!-- Walls (inactive, no active neighbors) -->
   ${wallCells.join("\n  ")}
 
   <!-- Floor / corridors (inactive, adjacent to active) -->
   ${floorCells.join("\n  ")}
 
-  <!-- Active dots (disappear as Pac-Man eats them) -->
-  ${dotCells.join("\n  ")}
+  <!-- Collectibles (disappear as the leader eats them) -->
+  ${itemCells.join("\n  ")}
 
-  <!-- Ghosts — trailing Pac-Man at fixed offsets (snake chain, no growth) -->
-  ${ghosts}
+  <!-- Followers — trailing the leader at fixed offsets (snake chain, no growth) -->
+  ${followers.join("\n")}
 
-  <!-- Pac-Man -->
-  ${pacman}
+  <!-- Leader -->
+  ${leader}
 </svg>`;
+}
+
+interface FigureContext {
+  grid: TraversalGrid;
+  theme: Theme;
+  sprite: (name: string) => ResolvedSprite;
+  keyTimes: string;
+  totalDuration: number;
+  step: number;
+  padding: number;
+  cellSize: number;
+}
+
+/**
+ * Draws one figure and animates it along the path.
+ *
+ * A follower with offset `k` occupies the leader's position from `k` steps ago, so
+ * the whole train walks the same route without any of them needing to know about
+ * each other. Before the animation is `k` steps old they all pile on the start
+ * cell, which is what makes the train emerge from a single point.
+ */
+function renderFigure(figure: ResolvedFigure, context: FigureContext): string {
+  const { grid, keyTimes, totalDuration, step, padding, cellSize } = context;
+
+  const at = (i: number): PathStep => grid.path[Math.max(0, i - figure.offset)];
+  const headings = grid.path.map((_, i) => at(i).direction);
+
+  const translate = grid.path
+    .map((_, i) => `${padding + at(i).col * step},${padding + at(i).row * step}`)
+    .join(";");
+
+  // Sprite-declared direction series become per-step animation values.
+  const series = (table: DirectionSeries): string => headings.map((d) => table[d]).join(";");
+  const vars = { ...figure.vars, keyTimes, dur: String(totalDuration) };
+
+  const body = renderPoses(figure, headings, context, { vars, series });
+
+  const inner = figure.rotate
+    ? `<g>
+      <animateTransform attributeName="transform" type="rotate"
+        values="${grid.path.map((_, i) => `${DIR_ANGLE[at(i).direction]},${cellSize / 2},${cellSize / 2}`).join(";")}"
+        keyTimes="${keyTimes}"
+        dur="${totalDuration}s" repeatCount="indefinite" calcMode="discrete"/>
+      ${body}
+    </g>`
+    : body;
+
+  return `
+  <g>
+    <animateTransform attributeName="transform" type="translate"
+      values="${translate}" keyTimes="${keyTimes}"
+      dur="${totalDuration}s" repeatCount="indefinite" calcMode="discrete"/>
+    ${inner}
+  </g>`;
+}
+
+/**
+ * Renders the figure's artwork for every direction it actually travels in.
+ *
+ * A figure whose four directions resolve to one sprite — anything that rotates, or
+ * ignores its heading — is drawn once. A figure with distinct poses draws each one
+ * and cross-fades between them on the step clock, since swapping artwork is not
+ * something a transform can express.
+ */
+function renderPoses(
+  figure: ResolvedFigure,
+  headings: Direction[],
+  context: FigureContext,
+  spriteContext: { vars: Record<string, string>; series: (table: DirectionSeries) => string }
+): string {
+  const { keyTimes, totalDuration } = context;
+  const perStep = headings.map((d) => figure.sprites[d]);
+  const distinct = [...new Set(perStep)];
+
+  if (distinct.length === 1) {
+    return renderSprite(context.sprite(distinct[0]), spriteContext);
+  }
+
+  return distinct
+    .map((name) => {
+      const values = perStep.map((p) => (p === name ? 1 : 0));
+      return `<g opacity="${values[0]}">
+      <animate attributeName="opacity" values="${values.join(";")}"
+        keyTimes="${keyTimes}" dur="${totalDuration}s" repeatCount="indefinite" calcMode="discrete"/>
+      ${renderSprite(context.sprite(name), spriteContext)}
+    </g>`;
+    })
+    .join("\n      ");
+}
+
+/** Emits `<defs>` for the symbol sprites this drawing actually referenced. */
+function collectDefs(theme: Theme, used: Set<string>): string {
+  const symbols = new Map<string, string>();
+  for (const name of used) {
+    const sprite = theme.sprites[name];
+    if (sprite?.kind === "symbol" && sprite.symbolId && sprite.symbolDefs) {
+      symbols.set(sprite.symbolId, sprite.symbolDefs);
+    }
+  }
+  if (symbols.size === 0) return "";
+  return `\n  <defs>\n    ${[...symbols.values()].join("\n    ")}\n  </defs>\n`;
+}
+
+function escapeText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

@@ -1,6 +1,22 @@
 import type { ContributionGrid } from "@git-pacman/github-contributions";
+import type { Direction } from "@git-pacman/theme";
 
-export type CellType = "active" | "floor" | "wall" | "cherry";
+export type { Direction };
+
+/**
+ * What occupies a cell. Deliberately theme-neutral: the grid decides *what kind*
+ * of thing is in a cell, and a theme decides what that looks like. A `pellet` is
+ * a dot to Pac-Man and a biscuit to the dogs.
+ */
+export type CellType =
+  /** An active contribution day — holds the theme's common collectible. */
+  | "pellet"
+  /** An active day promoted to the theme's rare collectible, if it has one. */
+  | "bonus"
+  /** Inactive day the leader walks through. */
+  | "floor"
+  /** Inactive day enclosed by other inactive days — a maze wall. */
+  | "wall";
 
 export interface Cell {
   col: number;
@@ -9,20 +25,32 @@ export interface Cell {
   cellType: CellType;
 }
 
-export type Direction = "right" | "left" | "up" | "down";
-
 export interface PathStep {
   col: number;
   row: number;
   direction: Direction;
+  /** True when the leader collects something on arriving here. */
   eating: boolean;
 }
 
-export interface PacmanGrid {
+/** The traversable grid and the route the leader takes through it. */
+export interface TraversalGrid {
   cells: Cell[][];
   cols: number;
   rows: number;
   path: PathStep[];
+}
+
+/** @deprecated Use {@link TraversalGrid} — the grid is not Pac-Man-specific. */
+export type PacmanGrid = TraversalGrid;
+
+export interface GridOptions {
+  /**
+   * Fraction of active days promoted to the theme's rare collectible, 0–1.
+   * Pass 0 — or leave it, for a theme with no bonus item — and no cell becomes a
+   * bonus at all. Comes from the theme's `collectibles.bonus.rate`.
+   */
+  bonusRate?: number;
 }
 
 const CARDINAL: { dc: number; dr: number; dir: Direction }[] = [
@@ -34,7 +62,10 @@ const CARDINAL: { dc: number; dr: number; dir: Direction }[] = [
 
 const MAX_WALL_CLUSTER = 8;
 
-export function buildGrid(contributions: ContributionGrid): PacmanGrid {
+export function buildGrid(
+  contributions: ContributionGrid,
+  options: GridOptions = {}
+): TraversalGrid {
   const rows = 7;
   const cols = contributions.weeks.length;
 
@@ -44,7 +75,7 @@ export function buildGrid(contributions: ContributionGrid): PacmanGrid {
         contributions.weeks[col]?.contributionDays[row]?.contributionCount ?? 0;
       return {
         col, row, contributionCount: count,
-        cellType: (count > 0 ? "active" : "wall") as CellType,
+        cellType: (count > 0 ? "pellet" : "wall") as CellType,
       };
     })
   );
@@ -52,7 +83,7 @@ export function buildGrid(contributions: ContributionGrid): PacmanGrid {
   const activeCells: [number, number][] = [];
   for (let c = 0; c < cols; c++)
     for (let r = 0; r < rows; r++)
-      if (cells[c][r].cellType === "active") activeCells.push([c, r]);
+      if (cells[c][r].cellType === "pellet") activeCells.push([c, r]);
 
   if (activeCells.length === 0) return { cells, cols, rows, path: [] };
 
@@ -84,9 +115,10 @@ export function buildGrid(contributions: ContributionGrid): PacmanGrid {
   const [startC, startR] = findCenter(cells, cols, rows);
   pruneIsolatedFloors(cells, cols, rows, startC, startR);
 
-  // ── Step 4: sprinkle cherries — 5% of active dots, evenly spaced across
-  // the grid in scan order, independent of teleporting. ──
-  sprinkleCherries(cells, cols, rows);
+  // ── Step 4: sprinkle bonus collectibles — a fraction of the active cells,
+  // evenly spaced across the grid in scan order. Themes without a bonus item
+  // pass no rate and this is a no-op. ──
+  sprinkleBonus(cells, cols, rows, options.bonusRate ?? 0);
 
   return { cells, cols, rows, path: dfsPath(cells, cols, rows, startC, startR) };
 }
@@ -121,11 +153,11 @@ function bfsCorridors(
   const corridors = new Set<string>();
   for (let c = 0; c < cols; c++) {
     for (let r = 0; r < rows; r++) {
-      if (cells[c][r].cellType !== "active") continue;
+      if (cells[c][r].cellType !== "pellet") continue;
       let cc = c, rr = r;
       while (parent[cc][rr] !== null) {
         const [pc, pr] = parent[cc][rr]!;
-        if (cells[pc][pr].cellType !== "active") corridors.add(`${pc},${pr}`);
+        if (cells[pc][pr].cellType !== "pellet") corridors.add(`${pc},${pr}`);
         cc = pc; rr = pr;
       }
     }
@@ -218,7 +250,7 @@ function pruneIsolatedFloors(
         cells[c][r].cellType = "wall";
 }
 
-/** Non-wall cell closest to the grid's center — natural Pac-Man start. */
+/** Non-wall cell closest to the grid's center — where the leader starts. */
 function findCenter(cells: Cell[][], cols: number, rows: number): [number, number] {
   const cc = cols / 2, cr = rows / 2;
   let bestC = 0, bestR = 0, bestDist = Infinity;
@@ -232,24 +264,26 @@ function findCenter(cells: Cell[][], cols: number, rows: number): [number, numbe
 }
 
 /**
- * Evenly sprinkles cherries across active cells — exactly floor(5% of active
- * dot count), spaced uniformly through the left-to-right scan order so they
- * appear distributed across the whole chart rather than clustered.
+ * Promotes floor(rate × active cells) pellets to the bonus collectible, spaced
+ * uniformly through the left-to-right scan order so they appear distributed
+ * across the whole chart rather than clustered.
  */
-function sprinkleCherries(cells: Cell[][], cols: number, rows: number): void {
+function sprinkleBonus(cells: Cell[][], cols: number, rows: number, rate: number): void {
+  if (!(rate > 0)) return;
+
   const active: [number, number][] = [];
   for (let c = 0; c < cols; c++)
     for (let r = 0; r < rows; r++)
-      if (cells[c][r].cellType === "active") active.push([c, r]);
+      if (cells[c][r].cellType === "pellet") active.push([c, r]);
 
-  const count = Math.floor(active.length * 0.025);
+  const count = Math.floor(active.length * rate);
   if (count === 0) return;
 
   // Pick `count` evenly-spaced indices through the active list
   for (let i = 0; i < count; i++) {
     const idx = Math.round(((i + 0.5) / count) * active.length);
     const [c, r] = active[Math.min(idx, active.length - 1)];
-    cells[c][r].cellType = "cherry";
+    cells[c][r].cellType = "bonus";
   }
 }
 
@@ -265,7 +299,7 @@ function dfsPath(
     visited[col][row] = true;
     path.push({
       col, row, direction: dir,
-      eating: cells[col][row].cellType === "active" || cells[col][row].cellType === "cherry",
+      eating: cells[col][row].cellType === "pellet" || cells[col][row].cellType === "bonus",
     });
     for (const { dc, dr, dir: nextDir } of CARDINAL) {
       const nc = col + dc, nr = row + dr;
